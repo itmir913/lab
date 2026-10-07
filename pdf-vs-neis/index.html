@@ -1,0 +1,666 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>출결 대조</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" integrity="sha512-q+4liFwdPC/bNdhUpZx6aXDx/h77yEQtn4I1slHydcbZK34nLaR3cAeYSJshoxIOq3mjEf7xJE8YWIUHMn+oCQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" integrity="sha512-r22gChDnGvBylk90+2e/ycr3RVrDi8DIOkIGNhJlKfuyQM4tIRAI062MaV8sfjQKYVGjOBaZBOA87z+IhZE9DA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+</head>
+<body class="bg-slate-50 text-slate-800 text-base min-h-screen">
+<main class="max-w-screen-2xl mx-auto px-4 py-6 space-y-6">
+
+  <header class="space-y-1">
+    <h1 class="text-3xl font-bold">출결 대조</h1>
+    <p class="text-base text-slate-600">전자출결 신고서(PDF)와 NEIS 월별 출결 현황(엑셀)을 대조합니다. 모든 처리는 이 브라우저 안에서만 이루어지며 파일은 어디로도 전송·저장되지 않습니다.</p>
+  </header>
+
+  <!-- 입력 -->
+  <section class="grid gap-4 md:grid-cols-2">
+    <label class="block bg-white rounded-xl border-2 border-dashed border-slate-300 p-5 cursor-pointer hover:border-blue-400">
+      <span class="block text-lg font-semibold">① 신고서 PDF</span>
+      <span class="block text-base text-slate-600 mt-1">리로스쿨 <b>알림신청 → 결석신고서/체험학습 → 인쇄 →</b> [인쇄 대상을 선택하세요.]에서 <b>[신청서]만 체크 → PDF로 저장</b></span>
+      <span id="pdfName" class="block text-base text-slate-500 mt-1">파일을 선택하세요</span>
+      <input id="pdfInput" type="file" accept=".pdf" class="hidden">
+    </label>
+    <label class="block bg-white rounded-xl border-2 border-dashed border-slate-300 p-5 cursor-pointer hover:border-blue-400">
+      <span class="block text-lg font-semibold">② NEIS 월별 출결 현황 엑셀</span>
+      <span class="block text-base text-slate-600 mt-1">NEIS <b>학급담임 → 출결현황및통계 → 학급별출결현황 →</b> <b>[인정내역 포함] 체크 → [월별 출결현황] → [엑셀다운로드]</b> 버튼 클릭 → <b>[엑셀]</b> 확인</span>
+      <span id="xlsxName" class="block text-base text-slate-500 mt-1">파일을 선택하세요</span>
+      <input id="xlsxInput" type="file" accept=".xlsx,.xls" class="hidden">
+    </label>
+  </section>
+
+  <details class="bg-white rounded-xl border border-slate-200 p-4">
+    <summary class="text-base font-semibold cursor-pointer">휴업일 설정 (신고 기간을 날짜별로 펼칠 때 제외)</summary>
+    <p class="text-base text-slate-600 mt-2">공휴일·재량휴업일을 YYYY-MM-DD, YYYYMMDD, YYMMDD 형식으로 한 줄에 하나씩 입력하세요. 쉼표로 구분해도 됩니다. 토·일요일은 자동 제외됩니다.</p>
+    <textarea id="holidays" rows="3" placeholder="2026-09-24&#10;20260925&#10;261009" class="mt-2 w-full rounded-lg border border-slate-300 p-2 text-base font-mono"></textarea>
+  </details>
+
+  <div class="flex flex-wrap items-center gap-3">
+    <button id="runBtn" disabled class="px-5 py-2.5 rounded-lg bg-blue-600 text-white text-base font-semibold disabled:bg-slate-300 hover:bg-blue-700">대조 시작</button>
+    <button id="exportBtn" disabled class="px-5 py-2.5 rounded-lg bg-emerald-600 text-white text-base font-semibold disabled:bg-slate-300 hover:bg-emerald-700">결과 엑셀 내려받기</button>
+    <span id="status" class="text-base text-slate-600"></span>
+  </div>
+
+  <!-- 결과 -->
+  <section id="resultSec" class="hidden space-y-4">
+    <div id="cards" class="space-y-4"></div>
+    <div id="warnBox" class="hidden bg-amber-50 border border-amber-300 rounded-xl p-4 text-base"></div>
+
+    <div class="grid gap-4 xl:grid-cols-3">
+      <div class="xl:col-span-2 min-w-0 bg-white rounded-xl border border-slate-200">
+        <div class="flex flex-wrap items-center gap-3 p-3 border-b border-slate-200">
+          <input id="search" type="search" placeholder="번호·이름 검색" class="rounded-lg border border-slate-300 px-3 py-1.5 text-base w-48">
+          <span id="filterLabel" class="text-base text-slate-600"></span>
+          <button id="clearFilter" class="text-base text-blue-600 hover:underline hidden">필터 해제</button>
+        </div>
+        <div class="overflow-auto max-h-[70vh]">
+          <table class="w-full text-base">
+            <thead class="bg-slate-100 sticky top-0">
+              <tr class="text-left">
+                <th class="px-3 py-2 whitespace-nowrap">결과</th>
+                <th class="px-3 py-2 whitespace-nowrap">번호</th>
+                <th class="px-3 py-2 whitespace-nowrap">이름</th>
+                <th class="px-3 py-2 whitespace-nowrap">날짜</th>
+                <th class="px-3 py-2 whitespace-nowrap">신고서</th>
+                <th class="px-3 py-2 whitespace-nowrap">쪽</th>
+                <th class="px-1 py-2"></th>
+                <th class="px-3 py-2 whitespace-nowrap">NEIS</th>
+                <th class="px-3 py-2 min-w-80">비고</th>
+              </tr>
+            </thead>
+            <tbody id="tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <aside class="bg-white rounded-xl border border-slate-200 p-3 xl:sticky xl:top-4 self-start">
+        <div class="flex items-center justify-between mb-2">
+          <h2 class="text-lg font-semibold">신고서 원본</h2>
+          <span id="pageLabel" class="text-base text-slate-500">행을 클릭하세요</span>
+        </div>
+        <div id="detail" class="text-base space-y-1 mb-2"></div>
+        <canvas id="pdfCanvas" class="w-full h-auto border border-slate-200 rounded"></canvas>
+      </aside>
+    </div>
+  </section>
+</main>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+const PDFJS_OPTS = {
+  cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
+  cMapPacked: true,
+  standardFontDataUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/standard_fonts/',
+};
+
+/* ───────────── 공통 유틸 ───────────── */
+const norm = s => (s || '').replace(/\s+/g, '');
+const pad = n => String(n).padStart(2, '0');
+const toISO = (y, m, d) => `${y}-${pad(m)}-${pad(d)}`;
+function parseDate(s) {
+  const m = /(\d{4})\s*[.\-\/]\s*(\d{1,2})\s*[.\-\/]\s*(\d{1,2})/.exec(s || '');
+  return m ? toISO(+m[1], +m[2], +m[3]) : null;
+}
+// 휴업일 입력: 줄바꿈 → 쉼표로 바꾼 뒤 쉼표로 나누고 앞뒤 공백 제거
+// YYYY-MM-DD / YYYY.MM.DD / YYYYMMDD / YYMMDD 허용
+function parseHolidays(text) {
+  const out = new Set();
+  for (const tok of text.replace(/\r?\n/g, ',').split(',').map(s => s.trim()).filter(Boolean)) {
+    let m = /^(\d{4})[-.\/](\d{1,2})[-.\/](\d{1,2})\.?$/.exec(tok)
+         || /^(\d{4})(\d{2})(\d{2})$/.exec(tok);
+    let y;
+    if (m) y = +m[1];
+    else if ((m = /^(\d{2})(\d{2})(\d{2})$/.exec(tok))) y = 2000 + +m[1];
+    else continue;
+    const mo = +m[2], d = +m[3];
+    const dt = new Date(Date.UTC(y, mo - 1, d));
+    if (dt.getUTCMonth() === mo - 1 && dt.getUTCDate() === d) out.add(toISO(y, mo, d));
+  }
+  return out;
+}
+function eachDay(start, end) {
+  const out = [];
+  const d = new Date(start + 'T00:00:00Z'), e = new Date(end + 'T00:00:00Z');
+  for (let i = 0; d <= e && i < 400; i++, d.setUTCDate(d.getUTCDate() + 1)) {
+    out.push({ iso: d.toISOString().slice(0, 10), dow: d.getUTCDay() });
+  }
+  return out;
+}
+// "질병조퇴" / "출석인정결석" → {reason, kind}
+function splitNeisCat(cat) {
+  const c = norm(cat);
+  const kind = ['결석', '지각', '조퇴', '결과'].find(k => c.endsWith(k)) || '';
+  let reason = kind ? c.slice(0, -kind.length) : c;
+  if (reason === '출석인정') reason = '인정';
+  return { kind, reason };
+}
+// "결석 / 질병" → {kind, reason}
+function splitPdfCat(s) {
+  const [kind = '', reason = ''] = (s || '').split('/').map(norm);
+  return { kind, reason: reason === '출석인정' ? '인정' : reason };
+}
+
+/* ───────────── PDF: 표 격자 추출 ───────────── */
+function mul(a, b) {
+  return [a[0]*b[0] + a[2]*b[1], a[1]*b[0] + a[3]*b[1], a[0]*b[2] + a[2]*b[3],
+          a[1]*b[2] + a[3]*b[3], a[0]*b[4] + a[2]*b[5] + a[4], a[1]*b[4] + a[3]*b[5] + a[5]];
+}
+function apply(m, x, y) { return [m[0]*x + m[2]*y + m[4], m[1]*x + m[3]*y + m[5]]; }
+
+// 페이지의 가로선(H)·세로선(V)을 뷰포트 좌표(좌상단 원점)로 수집
+async function extractLines(page, vp) {
+  const OPS = pdfjsLib.OPS;
+  const ol = await page.getOperatorList();
+  let ctm = [1, 0, 0, 1, 0, 0];
+  const stack = [];
+  let subs = [];
+  const H = [], V = [];
+  const toV = (x, y) => { const p = apply(ctm, x, y); return vp.convertToViewportPoint(p[0], p[1]); };
+
+  const addSeg = (a, b) => {
+    const dx = Math.abs(a[0] - b[0]), dy = Math.abs(a[1] - b[1]);
+    if (dy < 0.8 && dx >= 2) H.push({ y: (a[1] + b[1]) / 2, x0: Math.min(a[0], b[0]), x1: Math.max(a[0], b[0]) });
+    else if (dx < 0.8 && dy >= 2) V.push({ x: (a[0] + b[0]) / 2, y0: Math.min(a[1], b[1]), y1: Math.max(a[1], b[1]) });
+  };
+  // 채워진 얇은 사각형을 선으로 간주
+  const addBox = pts => {
+    const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+    const w = x1 - x0, h = y1 - y0;
+    if (h <= 3 && w >= 2) H.push({ y: (y0 + y1) / 2, x0, x1 });
+    else if (w <= 3 && h >= 2) V.push({ x: (x0 + x1) / 2, y0, y1 });
+  };
+  const strokeSubs = () => subs.forEach(s => { for (let i = 1; i < s.length; i++) addSeg(s[i - 1], s[i]); });
+  const fillSubs = () => subs.forEach(s => { if (s.length >= 2) addBox(s); });
+
+  for (let i = 0; i < ol.fnArray.length; i++) {
+    const fn = ol.fnArray[i], args = ol.argsArray[i];
+    switch (fn) {
+      case OPS.save: stack.push(ctm); break;
+      case OPS.restore: ctm = stack.pop() || [1, 0, 0, 1, 0, 0]; break;
+      case OPS.transform: ctm = mul(ctm, args); break;
+      case OPS.paintFormXObjectBegin: stack.push(ctm); if (args[0]) ctm = mul(ctm, args[0]); break;
+      case OPS.paintFormXObjectEnd: ctm = stack.pop() || [1, 0, 0, 1, 0, 0]; break;
+      case OPS.constructPath: {
+        const [ops, c] = args;
+        let j = 0, cur = null;
+        for (const op of ops) {
+          if (op === OPS.moveTo) { cur = [toV(c[j], c[j + 1])]; subs.push(cur); j += 2; }
+          else if (op === OPS.lineTo) { if (!cur) { cur = []; subs.push(cur); } cur.push(toV(c[j], c[j + 1])); j += 2; }
+          else if (op === OPS.rectangle) {
+            const [x, y, w, h] = c.slice(j, j + 4); j += 4;
+            const r = [toV(x, y), toV(x + w, y), toV(x + w, y + h), toV(x, y + h)];
+            r.push(r[0]); subs.push(r); cur = null;
+          }
+          else if (op === OPS.curveTo) { j += 6; cur = null; }
+          else if (op === OPS.curveTo2 || op === OPS.curveTo3) { j += 4; cur = null; }
+          else if (op === OPS.closePath) { if (cur && cur.length) cur.push(cur[0]); }
+        }
+        break;
+      }
+      case OPS.stroke: case OPS.closeStroke: strokeSubs(); subs = []; break;
+      case OPS.fill: case OPS.eoFill: fillSubs(); subs = []; break;
+      case OPS.fillStroke: case OPS.eoFillStroke: case OPS.closeFillStroke: case OPS.closeEOFillStroke:
+        strokeSubs(); fillSubs(); subs = []; break;
+      case OPS.endPath: subs = []; break;
+    }
+  }
+  return { H, V };
+}
+
+function cluster(vals, tol = 2) {
+  const s = [...vals].sort((a, b) => a - b), out = [];
+  for (const v of s) {
+    const last = out[out.length - 1];
+    if (last && v - last.max <= tol) { last.sum += v; last.n++; last.max = v; }
+    else out.push({ sum: v, n: 1, max: v });
+  }
+  return out.map(g => g.sum / g.n);
+}
+
+// 선을 연결 요소별로 묶어 표를 만들고, 행 띠마다 그 띠를 관통하는 세로선으로 칸을 나눔
+function buildTables(H, V) {
+  const n = H.length + V.length, parent = [...Array(n).keys()];
+  const find = i => parent[i] === i ? i : (parent[i] = find(parent[i]));
+  H.forEach((h, i) => V.forEach((v, k) => {
+    if (v.x >= h.x0 - 2 && v.x <= h.x1 + 2 && h.y >= v.y0 - 2 && h.y <= v.y1 + 2) parent[find(i)] = find(H.length + k);
+  }));
+  const groups = new Map();
+  for (let i = 0; i < n; i++) {
+    const r = find(i);
+    if (!groups.has(r)) groups.set(r, { hs: [], vs: [] });
+    if (i < H.length) groups.get(r).hs.push(H[i]); else groups.get(r).vs.push(V[i - H.length]);
+  }
+  const tables = [];
+  for (const { hs, vs } of groups.values()) {
+    if (hs.length < 2 || vs.length < 2) continue;
+    const ys = cluster(hs.map(h => h.y));
+    const rows = [];
+    for (let i = 0; i + 1 < ys.length; i++) {
+      const y0 = ys[i], y1 = ys[i + 1];
+      if (y1 - y0 < 3) continue;
+      const mid = (y0 + y1) / 2;
+      const xs = cluster(vs.filter(v => v.y0 <= mid && v.y1 >= mid).map(v => v.x));
+      const cells = [];
+      for (let k = 0; k + 1 < xs.length; k++) if (xs[k + 1] - xs[k] >= 3) cells.push({ x0: xs[k], x1: xs[k + 1], y0, y1, items: [] });
+      if (cells.length) rows.push(cells);
+    }
+    if (rows.length) tables.push({ rows, top: ys[0] });
+  }
+  return tables.sort((a, b) => a.top - b.top);
+}
+
+async function pageTables(page) {
+  const vp = page.getViewport({ scale: 1 });
+  const { H, V } = await extractLines(page, vp);
+  const tables = buildTables(H, V);
+  const tc = await page.getTextContent();
+  const allText = [];
+  for (const it of tc.items) {
+    if (!it.str || !it.str.trim()) continue;
+    const [x, y] = vp.convertToViewportPoint(it.transform[4], it.transform[5]);
+    const h = Math.hypot(it.transform[2], it.transform[3]) || 10;
+    const cx = x + (it.width || 0) / 2, cy = y - h * 0.3;
+    allText.push(it.str);
+    for (const t of tables) for (const row of t.rows) for (const c of row) {
+      if (cx >= c.x0 && cx <= c.x1 && cy >= c.y0 && cy <= c.y1) { c.items.push({ x, y, s: it.str }); break; }
+    }
+  }
+  for (const t of tables) for (const row of t.rows) for (const c of row) {
+    c.items.sort((a, b) => Math.abs(a.y - b.y) > 2 ? a.y - b.y : a.x - b.x);
+    let txt = '', prev = null;
+    for (const it of c.items) {
+      if (prev) txt += Math.abs(it.y - prev.y) > 2 ? '\n' : ' ';
+      txt += it.s; prev = it;
+    }
+    c.text = txt.replace(/[ \t]+/g, ' ').trim();
+  }
+  return { tables, text: allText.join(' ') };
+}
+
+const KNOWN_LABELS = ['이름/학번', '신청기간', '승인기간', '누적결석일수', '출결종류', '사유', '증빙자료', '확인방법', '확인내용'];
+const hasLabel = (t, label) => t.rows.some(r => r.some(c => norm(c.text) === label));
+function cellRight(t, label) {
+  for (const r of t.rows) {
+    const i = r.findIndex(c => norm(c.text) === label);
+    if (i < 0) continue;
+    for (const c of r.slice(i + 1)) {
+      if (KNOWN_LABELS.includes(norm(c.text))) return '';
+      if (c.text) return c.text;
+    }
+    return '';
+  }
+  return null;
+}
+
+// PDF 전체 → 신고서 레코드 목록
+async function parsePdf(buf, onProgress) {
+  const doc = await pdfjsLib.getDocument({ data: buf, ...PDFJS_OPTS }).promise;
+  const records = [], errors = [];
+  for (let p = 1; p <= doc.numPages; p++) {
+    onProgress && onProgress(p, doc.numPages);
+    const page = await doc.getPage(p);
+    const { tables } = await pageTables(page);
+    const t1 = tables.find(t => hasLabel(t, '출결종류'));
+    const t2 = tables.find(t => hasLabel(t, '승인기간'));
+    if (!t1) { errors.push({ page: p, why: '신청서 표를 찾지 못함' }); continue; }
+
+    const who = (t2 && cellRight(t2, '이름/학번')) || cellRight(t1, '이름/학번') || '';
+    const m = /^(.*?)\s*\/\s*(\d{4,5})/.exec(who.replace(/\n/g, ' '));
+    const cat = splitPdfCat(cellRight(t1, '출결종류'));
+    const periodTxt = ((t2 && cellRight(t2, '승인기간')) || cellRight(t1, '신청기간') || '').replace(/\n/g, ' ');
+    const reqTxt = ((t2 && cellRight(t2, '신청기간')) || cellRight(t1, '신청기간') || '').replace(/\n/g, ' ');
+    const dateRe = /\d{4}\s*[-.]\s*\d{1,2}\s*[-.]\s*\d{1,2}/g;
+    const dates = (periodTxt.match(dateRe) || []).map(parseDate);
+    const reqDates = (reqTxt.match(dateRe) || []).map(parseDate);
+    const slotRe = /\(\s*(조회|\d+교시)\s*부터\s*(종례|\d+교시)\s*까지\s*\)/;
+    const dayRe = /\(\s*(\d+)\s*일간\s*\)/;
+    const slot = slotRe.exec(periodTxt), reqSlot = slotRe.exec(reqTxt);
+    const dayN = dayRe.exec(periodTxt), reqDayN = dayRe.exec(reqTxt);
+    // 기간 비교용 요약: "날짜~날짜 (X부터 Y까지 | N일간)"
+    const periodSig = (ds, sl, dn) => [...new Set(ds)].map(d => d.slice(5)).join('~') +(sl ? ` (${sl[1]}~${sl[2]})` : dn ? ` (${dn[1]}일간)` : '');
+    const apSig = periodSig(dates, slot, dayN), rqSig = periodSig(reqDates, reqSlot, reqDayN);
+
+    if (!m) { errors.push({ page: p, why: '이름/학번 판독 실패' }); continue; }
+    if (!dates.length) { errors.push({ page: p, why: '기간 판독 실패' }); continue; }
+    if (!cat.kind) { errors.push({ page: p, why: '출결 종류 판독 실패' }); continue; }
+
+    records.push({
+      page: p,
+      name: norm(m[1]),
+      sid: m[2],
+      num: +m[2].slice(-2),
+      kind: cat.kind,
+      reason: cat.reason,
+      start: dates[0],
+      end: dates[1] || dates[0],
+      approved: !!(t2 && cellRight(t2, '승인기간')),
+      reqDiffers: reqDates.length > 0 && rqSig !== apSig,
+      reqSig: rqSig,
+      apSig,
+      // 신고서의 "0교시"는 NEIS의 "조회"에 해당
+      slotFrom: slot ? slot[1].replace(/^0교시$/, '조회') : '',
+      slotTo: slot ? slot[2].replace(/^0교시$/, '조회') : '',
+      statedDays: dayN ? +dayN[1] : null,
+      confirm: ((t2 && cellRight(t2, '확인내용')) || '').replace(/\n/g, ' '),
+      memo: (cellRight(t1, '사유') || '').replace(/\n/g, ' '),
+    });
+  }
+  return { doc, records, errors };
+}
+
+/* ───────────── NEIS 엑셀 ───────────── */
+function parseXlsx(buf) {
+  const wb = XLSX.read(buf, { type: 'array' });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  // 병합된 셀은 범위 전체를 왼쪽 위 셀 값으로 채움
+  for (const mg of ws['!merges'] || []) {
+    const src = ws[XLSX.utils.encode_cell(mg.s)];
+    if (!src) continue;
+    for (let r = mg.s.r; r <= mg.e.r; r++) for (let c = mg.s.c; c <= mg.e.c; c++) {
+      if (r !== mg.s.r || c !== mg.s.c) ws[XLSX.utils.encode_cell({ r, c })] = { ...src };
+    }
+  }
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
+  const out = [];
+  for (const r of rows) {
+    const date = parseDate(String(r[0]));
+    const num = parseInt(String(r[1]).trim(), 10);
+    if (!date || !num) continue; // 머리글 등
+    const cat = splitNeisCat(r[3]);
+    out.push({
+      date, num, name: norm(r[2]), cat: norm(r[3]), kind: cat.kind, reason: cat.reason,
+      periods: String(r[4]).replace(/,\s*$/, ''), memo: String(r[5]),
+    });
+  }
+  return out;
+}
+
+/* ───────────── 대조 ───────────── */
+const STATUS = {
+  ok:     { label: '일치',           badge: 'bg-emerald-100 text-emerald-800', row: '',
+            desc: 'PDF와 NEIS의 구분/교시/사유가 모두 일치함' },
+  diff:   { label: '구분 불일치',    badge: 'bg-amber-100 text-amber-800',     row: 'bg-amber-50',
+            desc: '같은 날짜인데 출결 구분이 불일치함 (예: PDF 질병조퇴 ↔ NEIS 질병결석)' },
+  slot:   { label: '교시 불일치',    badge: 'bg-orange-100 text-orange-800',   row: 'bg-orange-50',
+            desc: '출결 구분은 같지만 승인 교시 범위가 다름 (예: PDF 조회~종례 ↔ NEIS 1교시~종례)' },
+  memo:   { label: '사유 불일치',    badge: 'bg-yellow-100 text-yellow-800',   row: 'bg-yellow-50',
+            desc: '구분·교시는 같지만 사유가 다름 (예: PDF 담임교사 확인 내용 ↔ NEIS 사유)' },
+  noPdf:  { label: '신고서 없음',    badge: 'bg-red-100 text-red-800',         row: 'bg-red-50',
+            desc: 'NEIS에는 출결이 있으나 PDF 신고서가 없음 (미인정·체험학습은 대조 제외로 분류)' },
+  noNeis: { label: 'NEIS 미입력',    badge: 'bg-violet-100 text-violet-800',   row: 'bg-violet-50',
+            desc: 'PDF 신고서는 있으나 NEIS에 해당 날짜 출결이 없음 (엑셀에 없는 일자까지 포함)' },
+  exempt: { label: '별도서류·미인정', badge: 'bg-slate-200 text-slate-700',     row: 'text-slate-500',
+            desc: '결석신고서 대상이 아님 (NEIS 미인정 출결, 체험학습)' },
+};
+const FLAGS = {
+  name: { label: '이름 다름', badge: 'bg-sky-100 text-sky-800', test: r => r.nameDiff,
+          desc: '번호·날짜는 같지만 이름이 다름 (예: PDF 김○○ ↔ NEIS 이○○)' },
+  req:  { label: '신청≠승인 기간', badge: 'bg-pink-100 text-pink-800', test: r => r.reqDiff,
+          desc: 'PDF 안에서 학생 신청 기간과 교사 승인 기간이 다름 (예: 학생 신청 0교시~종례 → 교사 승인 1교시~종례)' },
+  days: { label: '일수 오류', badge: 'bg-fuchsia-100 text-fuchsia-800', test: r => r.daysIssue,
+          desc: 'PDF에 적힌 일수가 실제 수업일수와 다름 (예: 3일간 ↔ 수업일 2일), 또는 기간 전체가 휴일' },
+};
+// 카드 묶음: 대조 결과 / 신고서 내부 점검 / 대조 제외
+const CARD_GROUPS = [
+  { title: '신고서 ↔ NEIS 대조', hint: 'PDF와 NEIS 두 장부를 맞대어 본 결과', keys: ['all', 'ok', 'diff', 'slot', 'memo', 'noPdf', 'noNeis', 'name'] },
+  { title: '신고서 내부 점검', hint: 'PDF 한 장 안에서 맞지 않는 것 (대조 결과와 함께 표시됨)', keys: ['req', 'days'] },
+  { title: '대조 제외', hint: '신고서가 필요 없어 대조하지 않은 것', keys: ['exempt'] },
+];
+const catLabel = (reason, kind) => (reason === '인정' ? '출석인정' : reason) + kind;
+
+function compare(neis, pdfRecs, holidays) {
+  const months = new Set(neis.map(r => r.date.slice(0, 7)));
+  const neisMap = new Map(neis.map(r => [`${r.num}|${r.date}`, r]));
+  const pdfMap = new Map();
+  for (const rec of pdfRecs) {
+    for (const { iso, dow } of eachDay(rec.start, rec.end)) {
+      if (dow === 0 || dow === 6 || holidays.has(iso)) continue;
+      const k = `${rec.num}|${iso}`;
+      if (!pdfMap.has(k)) pdfMap.set(k, []);
+      pdfMap.get(k).push(rec);
+    }
+  }
+  // 신고서 자체 점검
+  const recNotes = new Map();
+  for (const rec of pdfRecs) {
+    const notes = [];
+    const school = eachDay(rec.start, rec.end).filter(d => d.dow % 6 && !holidays.has(d.iso)).length;
+    if (rec.statedDays != null && rec.statedDays !== school) notes.push(`신고서 ${rec.statedDays}일간 ≠ 수업일 ${school}일`);
+    if (!school) notes.push('기간 전체가 휴일');
+    recNotes.set(rec, notes);
+  }
+  // 날짜·교시처럼 숫자가 든 낱말은 빼고 비교 (담임 확인 내용에 날짜가 덧붙는 경우)
+  const memoKey = s => (s || '').split(/\s+/).filter(w => !/\d/.test(w)).join('').replace(/[.,·()\[\]\-~:;'"]/g, '');
+  const memoSame = (a, b) => { a = memoKey(a); b = memoKey(b); return !!a && !!b && (a.includes(b) || b.includes(a)); };
+  const slotsOf = n => n.periods.split(',').map(norm).filter(Boolean);
+
+  const results = [];
+  for (const k of new Set([...neisMap.keys(), ...pdfMap.keys()])) {
+    const n = neisMap.get(k), ps = pdfMap.get(k) || [];
+    const [num, date] = k.split('|');
+    const notes = [...new Set(ps.flatMap(p => recNotes.get(p)))];
+    const daysIssue = notes.length > 0;
+    let status, nameDiff = false;
+    if (n && ps.length) {
+      const same = ps.filter(p => p.kind === n.kind && p.reason === n.reason);
+      const sl = slotsOf(n);
+      if (!same.length) status = 'diff';
+      else if (!same.some(p => !p.slotFrom || (p.slotFrom === sl[0] && p.slotTo === sl[sl.length - 1]))) status = 'slot';
+      else if (!same.some(p => memoSame(p.confirm, n.memo))) status = 'memo';
+      else status = 'ok';
+      if (ps.some(p => p.name !== n.name)) { notes.push('이름 다름'); nameDiff = true; }
+    } else if (n) {
+      if (n.reason === '미인정') { status = 'exempt'; notes.push('미인정'); }
+      else if (/체험/.test(n.memo)) { status = 'exempt'; notes.push('체험학습'); }
+      else status = 'noPdf';
+    } else {
+      status = 'noNeis';
+      if (!months.has(date.slice(0, 7))) notes.push('엑셀에 없는 달');
+    }
+    if (ps.length > 1) notes.push(`신고서 ${ps.length}건 겹침`);
+    if (ps.some(p => !p.approved)) notes.push('승인 기간 없음(신청 기간 사용)');
+    const reqs = ps.filter(p => p.reqDiffers);
+    for (const p of reqs) notes.push(`신청 ${p.reqSig} → 승인 ${p.apSig}`);
+    results.push({
+      status, num: +num, date, reqDiff: reqs.length > 0, daysIssue, nameDiff,
+      name: n ? n.name : ps[0].name,
+      neis: n ? n.cat : '',
+      neisSlot: n ? (s => s.length ? `${s[0]}~${s[s.length - 1]}` : '')(slotsOf(n)) : '',
+      neisPeriods: n ? n.periods : '',
+      neisMemo: n ? n.memo : '',
+      pdf: ps.map(p => catLabel(p.reason, p.kind)).join(', '),
+      pdfSlot: ps.map(p => p.slotFrom ? `${p.slotFrom}~${p.slotTo}` : '').filter(Boolean).join(', '),
+      pdfMemo: ps.map(p => p.memo).join(' / '),
+      pdfConfirm: ps.map(p => p.confirm).join(' / '),
+      pdfPeriod: ps.map(p => p.start === p.end ? p.start : `${p.start}~${p.end}`).join(', '),
+      pages: ps.map(p => p.page),
+      note: notes.join(', '),
+    });
+  }
+  results.sort((a, b) => a.num - b.num || a.date.localeCompare(b.date));
+  return { results };
+}
+
+/* ───────────── 화면 ───────────── */
+const $ = id => document.getElementById(id);
+const state = { pdfFile: null, xlsxFile: null, doc: null, results: [], filter: null, renderTask: null };
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+
+$('pdfInput').addEventListener('change', e => { state.pdfFile = e.target.files[0] || null; $('pdfName').textContent = state.pdfFile ? state.pdfFile.name : '파일을 선택하세요'; updateRun(); });
+$('xlsxInput').addEventListener('change', e => { state.xlsxFile = e.target.files[0] || null; $('xlsxName').textContent = state.xlsxFile ? state.xlsxFile.name : '파일을 선택하세요'; updateRun(); });
+function updateRun() { $('runBtn').disabled = !(state.pdfFile && state.xlsxFile); }
+
+$('runBtn').addEventListener('click', async () => {
+  $('runBtn').disabled = true;
+  try {
+    await run(await state.pdfFile.arrayBuffer(), await state.xlsxFile.arrayBuffer());
+  } catch (err) {
+    $('status').textContent = '오류: ' + err.message;
+  } finally { updateRun(); }
+});
+
+async function run(pdfBuf, xlsxBuf) {
+  $('status').textContent = '엑셀 읽는 중…';
+  const neis = parseXlsx(xlsxBuf);
+  const { doc, records, errors } = await parsePdf(pdfBuf, (p, n) => { $('status').textContent = `PDF 읽는 중… ${p} / ${n}쪽`; });
+  state.doc = doc;
+  const holidays = parseHolidays($('holidays').value);
+  const { results } = compare(neis, records, holidays);
+  state.results = results;
+  state.filter = null;
+  $('status').textContent = `완료 — NEIS ${neis.length}건, 신고서 ${records.length}장 / ${doc.numPages}쪽`;
+  renderCards();
+  renderWarnings(errors);
+  renderTable();
+  $('resultSec').classList.remove('hidden');
+  $('exportBtn').disabled = false;
+  return { neis: neis.length, pdf: records.length, pages: doc.numPages, errors: errors.length, counts: countBy(results) };
+}
+
+function countBy(results) {
+  const c = {}; for (const k in STATUS) c[k] = 0;
+  results.forEach(r => c[r.status]++);
+  return c;
+}
+
+function renderCards() {
+  const c = countBy(state.results), box = $('cards');
+  box.replaceChildren();
+  const card = (k, label, badge, count, desc) => {
+    const active = k === 'all' ? !state.filter : state.filter === k;
+    const b = el('button', 'text-left bg-white rounded-xl border p-4 hover:border-blue-400 ' + (active ? 'border-blue-500 ring-2 ring-blue-200' : 'border-slate-200'));
+    b.append(el('span', 'inline-block rounded px-2 text-base ' + badge, label),
+             el('div', 'text-3xl font-bold mt-1', String(count)),
+             el('div', 'text-base text-slate-500 mt-1 leading-snug break-keep', desc));
+    b.onclick = () => setFilter(k === 'all' || state.filter === k ? null : k);
+    return b;
+  };
+  CARD_GROUPS.forEach((g, i) => {
+    const sec = el('div', i ? 'border-t-2 border-slate-300 pt-4' : '');
+    const head = el('div', 'flex flex-wrap items-baseline gap-x-3 mb-2');
+    head.append(el('h2', 'text-lg font-bold', g.title), el('span', 'text-base text-slate-500', g.hint));
+    const grid = el('div', 'grid gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-4');
+    for (const k of g.keys) {
+      if (k === 'all') grid.append(card('all', '전체', 'bg-slate-100 text-slate-800', state.results.length, '학생·날짜별 대조 결과 전체'));
+      else if (STATUS[k]) grid.append(card(k, STATUS[k].label, STATUS[k].badge, c[k], STATUS[k].desc));
+      else grid.append(card(k, FLAGS[k].label, FLAGS[k].badge, state.results.filter(FLAGS[k].test).length, FLAGS[k].desc));
+    }
+    sec.append(head, grid);
+    box.append(sec);
+  });
+}
+const matchFilter = (r, k) => STATUS[k] ? r.status === k : FLAGS[k].test(r);
+
+function renderWarnings(errors) {
+  const w = $('warnBox');
+  w.replaceChildren();
+  if (!errors.length) { w.classList.add('hidden'); return; }
+  w.classList.remove('hidden');
+  if (errors.length) {
+    w.append(el('div', 'font-semibold', `PDF 판독 실패 ${errors.length}쪽 (대조에서 제외됨)`));
+    w.append(el('div', '', errors.map(e => `${e.page}쪽: ${e.why}`).join(' · ')));
+  }
+}
+
+function setFilter(k) { state.filter = k; renderCards(); renderTable(); }
+$('clearFilter').onclick = () => setFilter(null);
+$('search').addEventListener('input', renderTable);
+
+function renderTable() {
+  const q = $('search').value.trim();
+  const rows = state.results.filter(r =>
+    (!state.filter || matchFilter(r, state.filter)) &&
+    (!q || String(r.num) === q || r.name.includes(q)));
+  $('filterLabel').textContent = (state.filter ? (STATUS[state.filter] || FLAGS[state.filter]).label + ' · ' : '') + `${rows.length}건`;
+  $('clearFilter').classList.toggle('hidden', !state.filter);
+  const tb = $('tbody');
+  tb.replaceChildren();
+  for (const r of rows) {
+    const s = STATUS[r.status];
+    const tr = el('tr', 'border-t border-slate-100 cursor-pointer hover:bg-blue-50 ' + s.row);
+    const td0 = el('td', 'px-3 py-1.5 whitespace-nowrap');
+    td0.append(el('span', 'inline-block rounded px-2 text-base ' + s.badge, s.label));
+    for (const f of Object.values(FLAGS)) if (f.test(r)) td0.append(el('span', 'inline-block rounded px-2 ml-1 text-base ' + f.badge, f.label));
+    tr.append(td0,
+      el('td', 'px-3 py-1.5', String(r.num)),
+      el('td', 'px-3 py-1.5 whitespace-nowrap', r.name),
+      el('td', 'px-3 py-1.5 whitespace-nowrap font-mono', r.date.slice(5)),
+      el('td', 'px-3 py-1.5 whitespace-nowrap', r.pdf ? `${r.pdf}${r.pdfSlot ? ` (${r.pdfSlot})` : ''}` : '—'),
+      el('td', 'px-3 py-1.5', r.pages.join(',')),
+      el('td', 'px-1 py-1.5 text-slate-400', '→'),
+      el('td', 'px-3 py-1.5 whitespace-nowrap', r.neis ? `${r.neis}${r.neisSlot ? ` (${r.neisSlot})` : ''}` : '—'),
+      el('td', 'px-3 py-1.5 min-w-80 break-keep', r.note));
+    tr.onclick = () => showDetail(r);
+    tb.append(tr);
+  }
+}
+
+function showDetail(r) {
+  const d = $('detail');
+  d.replaceChildren();
+  const line = (k, v) => { const p = el('div'); p.append(el('span', 'font-semibold', k + ' '), document.createTextNode(v || '—')); d.append(p); };
+  line('학생', `${r.num}번 ${r.name}`);
+  line('날짜', r.date);
+  line('신고서', [r.pdf, r.pdfPeriod, r.pdfSlot].filter(Boolean).join(' · '));
+  line('신고서 사유(학생)', r.pdfMemo);
+  line('신고서 확인 내용(담임)', r.pdfConfirm);
+  line('→ NEIS', [r.neis, r.neisPeriods].filter(Boolean).join(' · '));
+  line('NEIS 사유', r.neisMemo);
+  if (r.note) line('비고', r.note);
+  if (r.pages.length) renderPage(r.pages[0]);
+  else {
+    cancelRender();
+    $('pageLabel').textContent = '신고서 없음';
+    const cv = $('pdfCanvas'); cv.getContext('2d').clearRect(0, 0, cv.width, cv.height);
+  }
+}
+
+// 행을 연달아 클릭하면 마지막 클릭만 그리도록, 진행 중인 렌더를 취소하고 순번을 올림
+let renderSeq = 0;
+function cancelRender() {
+  renderSeq++;
+  if (state.renderTask) { state.renderTask.cancel(); state.renderTask = null; }
+}
+
+async function renderPage(n) {
+  if (!state.doc) return;
+  cancelRender();
+  const seq = renderSeq;
+  $('pageLabel').textContent = `${n}쪽`;
+  const page = await state.doc.getPage(n);
+  if (seq !== renderSeq) return; // 기다리는 사이 다른 행이 클릭됨
+  const vp = page.getViewport({ scale: 2 });
+  const cv = $('pdfCanvas');
+  cv.width = vp.width; cv.height = vp.height;
+  const task = state.renderTask = page.render({ canvasContext: cv.getContext('2d'), viewport: vp });
+  try { await task.promise; } catch (e) { /* 취소됨 */ }
+  if (state.renderTask === task) state.renderTask = null;
+}
+
+$('exportBtn').addEventListener('click', () => {
+  const data = state.results.map(r => ({
+    '결과': STATUS[r.status].label,
+    '추가 표시': Object.values(FLAGS).filter(f => f.test(r)).map(f => f.label).join(', '),
+    '번호': r.num, '이름': r.name, '날짜': r.date,
+    '신고서 구분': r.pdf, '신고서 기간': r.pdfPeriod, '신고서 교시': r.pdfSlot,
+    '신고서 사유(학생)': r.pdfMemo, '신고서 확인 내용(담임)': r.pdfConfirm, 'PDF 쪽': r.pages.join(','),
+    'NEIS 구분': r.neis, 'NEIS 교시': r.neisPeriods, 'NEIS 사유': r.neisMemo,
+    '비고': r.note,
+  }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), '대조결과');
+  XLSX.writeFile(wb, '출결대조결과.xlsx');
+});
+</script>
+</body>
+</html>
