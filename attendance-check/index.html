@@ -49,14 +49,15 @@
     <div id="cards" class="space-y-4"></div>
     <div id="warnBox" class="hidden bg-amber-50 border border-amber-300 rounded-xl p-4 text-base"></div>
 
+    <!-- xl 이상: 표와 원본 패널이 화면 높이를 채우고 각자 안에서 스크롤 -->
     <div class="grid gap-4 xl:grid-cols-3">
-      <div class="xl:col-span-2 min-w-0 bg-white rounded-xl border border-slate-200">
-        <div class="flex flex-wrap items-center gap-3 p-3 border-b border-slate-200">
+      <div class="xl:col-span-2 min-w-0 bg-white rounded-xl border border-slate-200 flex flex-col xl:h-[calc(100vh-2rem)]">
+        <div class="flex flex-wrap items-center gap-3 p-3 border-b border-slate-200 shrink-0">
           <input id="search" type="search" placeholder="번호·이름 검색" class="rounded-lg border border-slate-300 px-3 py-1.5 text-base w-48">
           <span id="filterLabel" class="text-base text-slate-600"></span>
           <button id="clearFilter" class="text-base text-blue-600 hover:underline hidden">필터 해제</button>
         </div>
-        <div class="overflow-auto max-h-[70vh]">
+        <div class="overflow-auto max-h-[70vh] xl:max-h-none xl:flex-1 xl:min-h-0">
           <table class="w-full text-base">
             <thead class="bg-slate-100 sticky top-0">
               <tr class="text-left">
@@ -76,13 +77,17 @@
         </div>
       </div>
 
-      <aside class="bg-white rounded-xl border border-slate-200 p-3 xl:sticky xl:top-4 self-start">
-        <div class="flex items-center justify-between mb-2">
+      <aside class="min-w-0 bg-white rounded-xl border border-slate-200 flex flex-col xl:h-[calc(100vh-2rem)]">
+        <div class="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-200 shrink-0">
           <h2 class="text-lg font-semibold">신고서 원본</h2>
-          <span id="pageLabel" class="text-base text-slate-500">행을 클릭하세요</span>
+          <span id="pageLabel" class="rounded-full bg-slate-100 px-3 text-base text-slate-600">행을 클릭하세요</span>
         </div>
-        <div id="detail" class="text-base space-y-1 mb-2"></div>
-        <canvas id="pdfCanvas" class="w-full h-auto border border-slate-200 rounded"></canvas>
+        <div class="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">
+          <div id="detail" class="space-y-4">
+            <p class="text-base text-slate-500">왼쪽 표에서 행을 클릭하면 신고서 내용과 원본 쪽이 여기에 표시됩니다.</p>
+          </div>
+          <canvas id="pdfCanvas" class="hidden w-full h-auto rounded-lg border border-slate-200 shadow-sm"></canvas>
+        </div>
       </aside>
     </div>
   </section>
@@ -468,6 +473,7 @@ function compare(neis, pdfRecs, holidays) {
     results.push({
       status, num: +num, date, reqDiff: reqs.length > 0, daysIssue, nameDiff,
       name: n ? n.name : ps[0].name,
+      pdfName: ps.map(p => p.name).join(', '),
       neis: n ? n.cat : '',
       neisSlot: n ? (s => s.length ? `${s[0]}~${s[s.length - 1]}` : '')(slotsOf(n)) : '',
       neisPeriods: n ? n.periods : '',
@@ -606,22 +612,67 @@ function renderTable() {
 }
 
 function showDetail(r) {
-  const d = $('detail');
+  const d = $('detail'), s = STATUS[r.status];
   d.replaceChildren();
-  const line = (k, v) => { const p = el('div'); p.append(el('span', 'font-semibold', k + ' '), document.createTextNode(v || '—')); d.append(p); };
-  line('학생', `${r.num}번 ${r.name}`);
-  line('날짜', r.date);
-  line('신고서', [r.pdf, r.pdfPeriod, r.pdfSlot].filter(Boolean).join(' · '));
-  line('신고서 사유(학생)', r.pdfMemo);
-  line('신고서 확인 내용(담임)', r.pdfConfirm);
-  line('→ NEIS', [r.neis, r.neisPeriods].filter(Boolean).join(' · '));
-  line('NEIS 사유', r.neisMemo);
-  if (r.note) line('비고', r.note);
-  if (r.pages.length) renderPage(r.pages[0]);
+
+  // 학생 · 날짜 · 결과
+  const head = el('div', 'space-y-2');
+  const who = el('div', 'flex flex-wrap items-baseline gap-x-3');
+  who.append(el('span', 'text-xl font-bold', `${r.num}번 ${r.name}`), el('span', 'text-base text-slate-500 font-mono', r.date));
+  const badges = el('div', 'flex flex-wrap gap-1');
+  badges.append(el('span', 'rounded px-2 text-base ' + s.badge, s.label));
+  for (const f of Object.values(FLAGS)) if (f.test(r)) badges.append(el('span', 'rounded px-2 text-base ' + f.badge, f.label));
+  head.append(who, badges);
+  d.append(head);
+
+  // 신고서(PDF) ↔ NEIS 항목별 대조. 불일치로 판정된 항목만 강조
+  const cmp = el('div', 'rounded-lg border border-slate-200 divide-y divide-slate-200');
+  const cols = el('div', 'grid grid-cols-2 gap-3 px-3 py-2 bg-slate-100 rounded-t-lg font-semibold');
+  cols.append(el('div', '', '신고서 (PDF)'), el('div', '', 'NEIS'));
+  cmp.append(cols);
+  const cell = (v, sub) => {
+    const c = el('div', 'min-w-0 break-keep');
+    if (!v) { c.append(el('span', 'text-slate-400', '—')); return c; }
+    c.append(el('div', 'leading-relaxed', v));
+    if (sub) c.append(el('div', 'text-base text-slate-500', sub));
+    return c;
+  };
+  const row = (label, a, b, bad, aSub, bSub) => {
+    const w = el('div', 'px-3 py-2 ' + (bad ? 'bg-amber-50' : ''));
+    const h = el('div', 'flex items-center gap-2 text-base text-slate-500 mb-0.5');
+    h.append(el('span', '', label));
+    if (bad) h.append(el('span', 'rounded px-2 bg-amber-200 text-amber-900', '불일치'));
+    const g = el('div', 'grid grid-cols-2 gap-3 text-base');
+    g.append(cell(a, aSub), cell(b, bSub));
+    w.append(h, g);
+    cmp.append(w);
+  };
+  if (r.nameDiff) row('이름', r.pdfName, r.name, true);
+  row('날짜', r.pdfPeriod, r.neis ? r.date : '');
+  row('구분', r.pdf, r.neis, r.status === 'diff');
+  row('교시', r.pdfSlot, r.neisSlot, r.status === 'slot', '', r.neisPeriods.replace(/,/g, ', '));
+  row('사유 · 신고서는 담임 확인 내용', r.pdfConfirm, r.neisMemo, r.status === 'memo');
+  d.append(cmp);
+
+  // 학생이 쓴 사유는 대조 대상이 아니므로 참고로만 표시
+  const memo = el('div', 'rounded-lg bg-slate-50 px-3 py-2');
+  memo.append(el('div', 'text-base text-slate-500', '참고 · 학생 작성 사유 (신고서)'),
+              el('div', 'text-base leading-relaxed break-keep', r.pdfMemo || '—'));
+  d.append(memo);
+
+  if (r.note) {
+    const n = el('div', 'rounded-lg border border-amber-200 bg-amber-50 p-3');
+    n.append(el('div', 'text-base font-semibold text-amber-800', '비고'), el('div', 'text-base break-keep', r.note));
+    d.append(n);
+  }
+
+  const cv = $('pdfCanvas');
+  if (r.pages.length) { cv.classList.remove('hidden'); renderPage(r.pages[0]); }
   else {
     cancelRender();
     $('pageLabel').textContent = '신고서 없음';
-    const cv = $('pdfCanvas'); cv.getContext('2d').clearRect(0, 0, cv.width, cv.height);
+    cv.classList.add('hidden');
+    cv.getContext('2d').clearRect(0, 0, cv.width, cv.height);
   }
 }
 
