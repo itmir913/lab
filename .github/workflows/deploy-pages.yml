@@ -1,0 +1,52 @@
+# GitHub Pages 배포.
+#
+# main에 push할 때마다 하위 폴더 목록(manifest.json)을 새로 만들어
+# 사이트와 함께 올린다. manifest.json은 배포 산출물에만 들어가고
+# 저장소에는 커밋하지 않는다.
+#
+# 저장소 설정이 Settings → Pages → Source: GitHub Actions 여야 한다.
+
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# 배포가 겹치지 않게 한 번에 하나만 돌린다.
+# 진행 중인 배포를 취소하지 않는다 - 중간에 끊으면 사이트가 반쯤 갱신된 채 남는다.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy site
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v6
+
+      - name: Build manifest
+        run: python3 .github/scripts/build_manifest.py
+
+      # 저장소 뿌리를 그대로 올린다. .git과 .github는 업로드에서 빠진다.
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: '.'
+
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v5

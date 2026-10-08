@@ -1,0 +1,4 @@
+# 문서 원본은 줄바꿈 변환을 하면 안 된다.
+*.pdf  binary
+*.hwp  binary
+*.hwpx binary
