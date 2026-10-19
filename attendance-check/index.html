@@ -618,21 +618,42 @@ async function run(pdfBuf, xlsxBuf) {
     setProgress(p / n);
   });
   setProgress(null);
-  state.doc = doc;
-  const holidays = parseHolidays($('holidays').value);
-  const { results } = compare(neis, records, holidays);
-  state.results = results;
-  state.filter = 'todo';
-  state.selKey = null;
-  state.checked = new Set();
+  if (state.doc) state.doc.destroy();
+  Object.assign(state, { doc, neis, records, filter: 'todo', selKey: null, checked: new Set() });
   $('status').textContent = `완료 — NEIS ${neis.length}건, 신고서 ${records.length}장 / ${doc.numPages}쪽`;
-  renderCards();
+  clearDetail();
   renderWarnings(errors);
-  renderTable();
+  recompute();
   $('resultSec').classList.remove('hidden');
   $('exportBtn').disabled = false;
   showInputs(false);
-  return { neis: neis.length, pdf: records.length, pages: doc.numPages, errors: errors.length, counts: countBy(results) };
+  return { neis: neis.length, pdf: records.length, pages: doc.numPages, errors: errors.length, counts: countBy(state.results) };
+}
+
+// 판독 결과는 그대로 두고 대조만 다시 수행 (휴업일 변경 시)
+// 선택 행이 결과에서 빠지면 같은 위치의 다음 행을 선택
+function recompute() {
+  if (!state.neis) return;
+  const idx = state.visible.findIndex(r => keyOf(r) === state.selKey);
+  state.results = compare(state.neis, state.records, parseHolidays($('holidays').value)).results;
+  renderCards();
+  renderTable();
+  if (state.selKey == null) return;
+  let r = state.visible.find(v => keyOf(v) === state.selKey);
+  if (!r && idx >= 0 && state.visible.length) r = state.visible[Math.min(idx, state.visible.length - 1)];
+  if (r) select(r); else { state.selKey = null; clearDetail(); }
+}
+let holidayTimer = null;
+$('holidays').addEventListener('input', () => {
+  clearTimeout(holidayTimer);
+  holidayTimer = setTimeout(recompute, 300);
+});
+function addHoliday(iso) {
+  const t = $('holidays');
+  if (parseHolidays(t.value).has(iso)) return;
+  t.value = t.value.replace(/\s*$/, '') + (t.value.trim() ? '\n' : '') + iso;
+  t.closest('details').open = true;
+  recompute();
 }
 
 // 대조 후에는 입력 칸을 접고 파일명 1행만 표시
@@ -808,6 +829,13 @@ document.addEventListener('keydown', e => {
   e.preventDefault();
 });
 
+function clearDetail() {
+  cancelRender();
+  $('detail').replaceChildren(el('p', 'text-base text-slate-500', '좌측 표에서 행을 클릭하면 신고서 내용과 원본 쪽이 이 영역에 표시됩니다.'));
+  $('pageLabel').textContent = '행을 클릭하세요';
+  $('pdfCanvas').classList.add('hidden');
+}
+
 function showDetail(r) {
   const d = $('detail'), s = STATUS[r.status];
   d.replaceChildren();
@@ -855,6 +883,16 @@ function showDetail(r) {
   row('교시', r.pdfSlot, r.neisSlot, r.status === 'slot', '', r.neisPeriods.replace(/,/g, ', '));
   row('사유 · 신고서는 담임 확인 내용', r.pdfConfirm, r.neisMemo, r.status === 'memo');
   d.append(cmp);
+
+  // NEIS 미입력은 공휴일·재량휴업일이 원인인 경우가 많으므로 바로 휴업일로 지정할 수 있게 함
+  if (r.status === 'noNeis') {
+    const h = el('div', 'flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2');
+    const b = el('button', 'rounded-lg bg-violet-600 px-3 py-1 text-base font-semibold text-white hover:bg-violet-700', `${r.date} 휴업일 지정`);
+    b.type = 'button';
+    b.onclick = () => addHoliday(r.date);
+    h.append(b, el('span', 'text-base text-slate-600', '공휴일·재량휴업일이면 지정하여 대조에서 제외합니다'));
+    d.append(h);
+  }
 
   // 학생이 쓴 사유는 대조 대상이 아니므로 참고로만 표시
   const memo = el('div', 'rounded-lg bg-slate-50 px-3 py-2');
