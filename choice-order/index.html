@@ -1,0 +1,528 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>선지 배열기</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+// 배점 생성기와 같은 양식: 남색 머리글 + 흰 칸 + 얇은 괘선
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        wash: '#F4F5F7', ink: '#1D2B3A', muted: '#5E6B73',
+        rule: '#CDD6D1', 'rule-strong': '#8FA39A', seal: '#C2352B',
+        head: '#2B4560', 'head-soft': '#E6EDF4',
+        warn: { fg: '#8A5300', bg: '#F8ECD3' },
+      },
+      fontFamily: {
+        sans: ['"Pretendard Variable"', 'Pretendard', 'system-ui', 'sans-serif'],
+      },
+    },
+  },
+};
+</script>
+<style>
+  html { scrollbar-gutter: stable; }
+  body { word-break: keep-all; overflow-wrap: break-word; }
+  :focus-visible { outline: 2px solid #1D2B3A; outline-offset: 2px; }
+  /* 붙여 넣는 칸과 결과 칸: 탭과 줄바꿈을 그대로 보이게 둔다 */
+  .paste {
+    width: 100%; min-height: 14rem; padding: .75rem 1rem; background: #fff;
+    border: 1px solid #CDD6D1; border-radius: .25rem; font-size: 1.0625rem; line-height: 1.7;
+    white-space: pre; overflow-x: auto; tab-size: 16; -moz-tab-size: 16;
+  }
+  /* 결과는 시험지처럼 보이도록 글자 그대로 그린다 (탭은 공백 16칸 자리에서 끊긴다) */
+  pre.paste { margin: 0; font-family: inherit; min-height: 6rem; }
+  .paste:focus { border-color: #2B4560; outline: 2px solid #2B4560; outline-offset: -2px; }
+  /* 고른 단추는 눌린 것처럼 남색으로 채운다 */
+  .seg { padding: .4rem .9rem; font-weight: 600; color: #2B4560; background: #fff; white-space: nowrap; }
+  .seg:hover { background: #E6EDF4; }
+  .seg[aria-pressed="true"] { background: #2B4560; color: #fff; }
+  .seg + .seg { border-left: 1px solid #CDD6D1; }
+</style>
+</head>
+<body class="bg-white text-ink font-sans text-base antialiased min-h-screen">
+<main class="max-w-5xl mx-auto px-4 py-8 space-y-5">
+
+  <header class="space-y-1">
+    <h1 class="text-2xl font-bold">선지 배열기</h1>
+    <p class="text-muted">지필평가 선지나 보기를 그대로 붙여 넣으면 유형을 알아서 가려내어 길이순이나 사전순으로 다시 늘어놓습니다. 번호와 탭 같은 구분자는 그대로 되살립니다.</p>
+  </header>
+
+  <!-- 메뉴바: 배열 기준과 번호 모양 -->
+  <section aria-label="배열 조건" class="space-y-3">
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+      <span class="font-semibold">배열</span>
+      <div id="orderBar" role="group" aria-label="배열 기준" class="flex flex-wrap overflow-hidden rounded border border-rule-strong">
+        <button type="button" class="seg" data-val="len" aria-pressed="true">길이순</button>
+        <button type="button" class="seg" data-val="lenDesc" aria-pressed="false">길이 역순</button>
+        <button type="button" class="seg" data-val="abc" aria-pressed="false">사전순</button>
+        <button type="button" class="seg" data-val="abcDesc" aria-pressed="false">사전 역순</button>
+        <button type="button" class="seg" data-val="headLen" aria-pressed="false">머리말 묶음 → 길이순</button>
+        <button type="button" class="seg" data-val="headLenDesc" aria-pressed="false">머리말 묶음 → 길이 역순</button>
+        <button type="button" class="seg" data-val="orig" aria-pressed="false">원래 순서</button>
+      </div>
+    </div>
+    <p id="headMsg" class="hidden text-muted"></p>
+
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+      <span class="font-semibold">번호</span>
+      <div id="markBar" role="group" aria-label="번호 모양" class="flex flex-wrap overflow-hidden rounded border border-rule-strong">
+        <button type="button" class="seg" data-val="keep" aria-pressed="true">원래 그대로</button>
+        <button type="button" class="seg" data-val="circle" aria-pressed="false">①②③</button>
+        <button type="button" class="seg" data-val="kor" aria-pressed="false">ㄱㄴㄷ</button>
+        <button type="button" class="seg" data-val="num" aria-pressed="false">1. 2. 3.</button>
+        <button type="button" class="seg" data-val="paren" aria-pressed="false">(1)(2)(3)</button>
+        <button type="button" class="seg" data-val="hangul" aria-pressed="false">(가)(나)</button>
+        <button type="button" class="seg" data-val="bullet" aria-pressed="false">◦</button>
+        <button type="button" class="seg" data-val="none" aria-pressed="false">없음</button>
+      </div>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+      <span class="font-semibold">배치</span>
+      <div id="layoutBar" role="group" aria-label="답항 배치" class="flex flex-wrap overflow-hidden rounded border border-rule-strong">
+        <button type="button" class="seg" data-val="keep" aria-pressed="true">붙여 넣은 그대로</button>
+        <button type="button" class="seg" data-val="1" aria-pressed="false">1행답항</button>
+        <button type="button" class="seg" data-val="2" aria-pressed="false">2행답항</button>
+        <button type="button" class="seg" data-val="3" aria-pressed="false">3행답항</button>
+        <button type="button" class="seg" data-val="4" aria-pressed="false">4행답항</button>
+        <button type="button" class="seg" data-val="5" aria-pressed="false">5행답항</button>
+      </div>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-x-5 gap-y-2 text-muted">
+      <label class="flex items-center gap-2"><input id="optTrim" type="checkbox" checked class="h-4 w-4 accent-head"> 선지 앞뒤 공백 다듬기</label>
+      <label class="flex items-center gap-2"><input id="optNoSpace" type="checkbox" class="h-4 w-4 accent-head"> 길이 셀 때 공백 빼기</label>
+    </div>
+  </section>
+
+  <!-- 붙여 넣는 칸 -->
+  <section aria-label="붙여 넣기" class="space-y-2">
+    <div class="flex flex-wrap items-center gap-2">
+      <h2 class="font-semibold">여기에 붙여 넣기</h2>
+      <span id="kindMsg" class="text-muted" aria-live="polite"></span>
+      <span class="ml-auto flex items-center gap-2">
+        <button id="sampleBtn" type="button" class="rounded border border-rule-strong px-3 py-1.5 font-semibold text-head hover:bg-head-soft">예시 넣기</button>
+        <button id="clearBtn" type="button" class="rounded border border-rule-strong px-3 py-1.5 font-semibold text-head hover:bg-head-soft">비우기</button>
+      </span>
+    </div>
+    <textarea id="input" class="paste" spellcheck="false" aria-label="선지 붙여 넣기"
+      placeholder="예:&#10;① A&#9;② B&#9;③ C&#9;④ D&#9;⑤ E"></textarea>
+  </section>
+
+  <div id="errorBox" class="hidden rounded border border-rule border-l-4 border-l-warn-fg bg-warn-bg/40 p-3"></div>
+
+  <!-- 결과 -->
+  <section id="resultSec" class="hidden space-y-2" aria-label="배열한 결과">
+    <div class="flex flex-wrap items-center gap-2">
+      <h2 class="font-semibold">배열한 결과</h2>
+      <span class="ml-auto flex items-center gap-2">
+        <span id="copyMsg" class="text-muted" aria-live="polite"></span>
+        <button id="copyBtn" type="button" class="rounded bg-head px-3 py-1.5 font-semibold text-white hover:bg-ink">결과 복사</button>
+      </span>
+    </div>
+    <pre id="output" class="paste bg-wash" tabindex="0" aria-label="배열한 결과"></pre>
+    <p class="text-muted">탭은 시험지처럼 일정한 칸(공백 16칸 자리)에서 끊기게 그렸습니다. 복사하면 탭은 탭 그대로 나가므로 한글·워드·엑셀에서 칸이 맞습니다.</p>
+
+    <div class="overflow-x-auto">
+      <table class="w-full min-w-[30rem] table-fixed border-collapse">
+        <thead>
+          <tr class="bg-head text-white [&>th]:border [&>th]:border-head [&>th]:px-3 [&>th]:py-2 [&>th]:font-semibold">
+            <th class="w-16 whitespace-nowrap">번호</th>
+            <th>선지</th>
+            <th class="w-24 whitespace-nowrap">글자 수</th>
+            <th class="w-24 whitespace-nowrap">본래 자리</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+    <p class="text-muted"><span id="rowMsg" aria-live="polite">표의 줄을 누르면 그 선지만 복사합니다.</span></p>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+
+/* ───────────── 번호 유형 ─────────────
+   앞선 유형이 먼저 뽑히므로, 다른 글과 헷갈릴 일이 적은 것을 위에 둔다 */
+const KINDS = [
+  { id: 'circle', name: '①②③ 번호',    src: '[\\u2460-\\u2473\\u2780-\\u2789\\u2776-\\u277F]' },
+  { id: 'kor',    name: 'ㄱㄴㄷ 번호',   src: '[\\u3131-\\u314E]\\s*[.)]' },
+  { id: 'korP',   name: '(ㄱ)(ㄴ) 번호', src: '\\(\\s*[\\u3131-\\u314E]\\s*\\)' },
+  { id: 'hangul', name: '(가)(나) 번호', src: '\\(\\s*[가-힣]\\s*\\)' },
+  { id: 'bullet', name: '◦ 같은 머리표', src: '[\\u25E6\\u25CB\\u25CF\\u2022\\u00B7\\u2219\\u25AA\\u25AB\\u203B\\u25A0\\u25A1\\u2500]' },
+  { id: 'paren',  name: '(1)(2) 번호',   src: '\\(\\s*\\d{1,2}\\s*\\)' },
+  { id: 'num',    name: '1. 2. 번호',    src: '\\d{1,2}\\s*[.)]' },
+  { id: 'dash',   name: '- 머리표',      src: '[-\\u2013\\u2014]' },
+];
+
+/* 번호를 다시 매길 때 쓰는 글자 */
+const CIRCLE = [...'①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳'];
+const JAMO   = [...'ㄱㄴㄷㄹㅁㅂㅅㅇㅈㅊㅋㅌㅍㅎ'];
+const GANADA = [...'가나다라마바사아자차카타파하'];
+
+function markerOf(style, i) {
+  switch (style) {
+    case 'circle': return CIRCLE[i] || '(' + (i + 1) + ')';
+    case 'kor':    return (JAMO[i] || String(i + 1)) + '.';
+    case 'num':    return (i + 1) + '.';
+    case 'paren':  return '(' + (i + 1) + ')';
+    case 'hangul': return '(' + (GANADA[i] || (i + 1)) + ')';
+    case 'bullet': return '◦';
+    case 'none':   return '';
+  }
+  return '';
+}
+
+/* ───────────── 붙여 넣은 글 읽기 ─────────────
+   줄마다 번호를 찾아, 번호 / 번호 뒤 공백 / 본문 / 본문 뒤 구분자로 쪼갠다.
+   구분자(탭, 여러 칸 띄우기)는 글자 그대로 들고 있다가 결과에 되돌려 놓는다 */
+function parse(text) {
+  const lines = text.replace(/\r\n?/g, '\n').split('\n');
+
+  let best = null;
+  for (const kind of KINDS) {
+    // 줄 맨 앞이거나 공백 뒤에 있는 것만 번호로 본다 ("① (가) - …"의 (가)는 본문이다)
+    const re = new RegExp('(?:^|(?<=\\s))(?:' + kind.src + ')', 'gu');
+    const hits = [];
+    let atLineStart = 0;
+    lines.forEach((line, li) => {
+      re.lastIndex = 0;
+      let m;
+      while ((m = re.exec(line)) !== null) {
+        if (m[0] === '') { re.lastIndex++; continue; }
+        const first = line.slice(0, m.index).trim() === '';
+        if (first) atLineStart++;
+        hits.push({ line: li, start: m.index, end: m.index + m[0].length, text: m[0] });
+      }
+    });
+    if (hits.length < 2) continue;
+    // 줄 맨 앞에 놓인 번호가 많은 유형을 먼저 믿는다
+    const score = atLineStart * 1000 + hits.length;
+    if (!best || score > best.score) best = { kind, hits, score };
+  }
+
+  if (!best) return parseByLine(lines);
+
+  const byLine = new Map();
+  for (const h of best.hits) {
+    if (!byLine.has(h.line)) byLine.set(h.line, []);
+    byLine.get(h.line).push(h);
+  }
+
+  const rows = [];   // 줄마다: 글자 그대로 둘 것과 선지 칸
+  const items = [];  // 선지 본문 (문서에 놓인 순서)
+  lines.forEach((line, li) => {
+    const hs = byLine.get(li);
+    if (!hs) { rows.push({ raw: line }); return; }
+    const cells = [];
+    const prefix = line.slice(0, hs[0].start);
+    hs.forEach((h, k) => {
+      const next = k + 1 < hs.length ? hs[k + 1].start : line.length;
+      const rest = line.slice(h.end, next);
+      const gap = /^[ \t]*/.exec(rest)[0];        // 번호와 본문 사이
+      const bodyRaw = rest.slice(gap.length);
+      const sep = /[ \t]*$/.exec(bodyRaw)[0];     // 다음 번호까지의 구분자 (탭 등)
+      const body = bodyRaw.slice(0, bodyRaw.length - sep.length);
+      cells.push({ marker: h.text, gap, sep, slot: items.length });
+      items.push(body);
+    });
+    rows.push({ prefix, cells });
+  });
+
+  return { kindName: best.kind.name, rows, items, lineMode: false };
+}
+
+/* 번호가 없으면 줄 그대로를 선지 한 개로 본다 */
+function parseByLine(lines) {
+  const rows = [];
+  const items = [];
+  lines.forEach(line => {
+    if (line.trim() === '') { rows.push({ raw: line }); return; }
+    const prefix = /^[ \t]*/.exec(line)[0];
+    const body = line.slice(prefix.length).replace(/[ \t]+$/, '');
+    const sep = /[ \t]*$/.exec(line)[0];
+    rows.push({ prefix, cells: [{ marker: '', gap: '', sep, slot: items.length }] });
+    items.push(body);
+  });
+  if (items.length < 2) return null;
+  return { kindName: '번호 없는 줄', rows, items, lineMode: true };
+}
+
+/* ───────────── 배열 ───────────── */
+const collator = new Intl.Collator('ko', { numeric: true, sensitivity: 'base' });
+
+function lengthOf(s, noSpace) {
+  const t = s.trim();
+  return [...(noSpace ? t.replace(/\s+/g, '') : t)].length;
+}
+
+/* 선지 앞머리에 붙은 토큰: (가) [A] <ㄱ> ① A. 1) 같은 것.
+   "(가)"는 보기의 한 가지일 뿐이므로 모양을 못박지 않고 앞머리 토큰을 통째로 본다 */
+const HEAD_RE = /^\s*(?:[(\[<{][^)\]>}\n]{1,8}[)\]>}]|[①-⑳]|[ㄱ-ㅎ]\s*[.)]|[A-Za-z]\s*[.)]|\d{1,2}\s*[.)])/u;
+
+function headOf(s) {
+  const m = HEAD_RE.exec(s);
+  return m ? m[0].trim() : '';
+}
+
+/* 머리말로 묶을 수 있는 글인지 본다 (머리말이 붙은 선지가 둘 이상이고, 머리말이 두 가지 이상) */
+function headInfo(items) {
+  const heads = items.map(headOf);
+  const found = heads.filter(h => h !== '');
+  const kinds = [...new Set(found)];
+  return { heads, ok: found.length >= 2 && kinds.length >= 2, kinds };
+}
+
+function arrange(items, order, noSpace) {
+  const idx = items.map((_, i) => i);
+  if (order === 'orig') return idx;
+  const len = items.map(s => lengthOf(s, noSpace));
+  const byHead = order === 'headLen' || order === 'headLenDesc';
+  // 머리말로 묶을 때는 머리말을 뺀 나머지로 길이를 잰다
+  const heads = byHead ? headInfo(items).heads : null;
+  const rest = byHead ? items.map((s, i) => s.slice(heads[i].length).trim()) : null;
+  const restLen = byHead ? rest.map(s => lengthOf(s, noSpace)) : null;
+  idx.sort((a, b) => {
+    switch (order) {
+      case 'len':     return len[a] - len[b] || collator.compare(items[a], items[b]) || a - b;
+      case 'lenDesc': return len[b] - len[a] || collator.compare(items[a], items[b]) || a - b;
+      case 'abc':     return collator.compare(items[a], items[b]) || a - b;
+      case 'abcDesc': return collator.compare(items[b], items[a]) || a - b;
+      case 'headLen':
+        return collator.compare(heads[a], heads[b]) || restLen[a] - restLen[b] || collator.compare(rest[a], rest[b]) || a - b;
+      case 'headLenDesc':
+        return collator.compare(heads[a], heads[b]) || restLen[b] - restLen[a] || collator.compare(rest[a], rest[b]) || a - b;
+    }
+    return a - b;
+  });
+  return idx;
+}
+
+/* ───────────── 결과 만들기 ───────────── */
+const state = { order: 'len', mark: 'keep', layout: 'keep', outText: '', rowText: [] };
+
+function render() {
+  const text = $('input').value;
+  const err = $('errorBox');
+  if (text.trim() === '') {
+    $('resultSec').classList.add('hidden');
+    err.classList.add('hidden');
+    $('kindMsg').textContent = '';
+    return;
+  }
+
+  const parsed = parse(text);
+  if (!parsed) {
+    $('resultSec').classList.add('hidden');
+    err.textContent = '선지를 두 개 이상 찾지 못했습니다. 번호가 붙은 선지나 줄마다 하나씩 적은 글을 붙여 넣어 주세요.';
+    err.classList.remove('hidden');
+    $('kindMsg').textContent = '';
+    return;
+  }
+  err.classList.add('hidden');
+
+  const trim = $('optTrim').checked;
+  const noSpace = $('optNoSpace').checked;
+  const items = parsed.items.map(s => trim ? s.trim() : s);
+  const picked = arrange(items, state.order, noSpace);
+
+  $('kindMsg').textContent = parsed.kindName + ' · 선지 ' + items.length + '개';
+
+  // 머리말 묶음을 골랐는데 묶을 머리말이 없으면 그냥 길이순과 같아지므로 알려 준다
+  const headBox = $('headMsg');
+  if (state.order === 'headLen' || state.order === 'headLenDesc') {
+    const info = headInfo(items);
+    headBox.textContent = info.ok
+      ? '머리말 ' + info.kinds.slice(0, 6).join(' · ') + ' 로 묶은 뒤, 묶음 안에서 길이순으로 늘어놓았습니다.'
+      : '앞머리에 (가)나 A. 같은 머리말이 없어 묶을 것이 없습니다. 길이순과 같은 결과입니다.';
+    headBox.classList.remove('hidden');
+  } else {
+    headBox.classList.add('hidden');
+  }
+
+  const slots = [];
+  parsed.rows.forEach(row => { if (row.cells) row.cells.forEach(c => slots.push(c)); });
+
+  // 자리마다 번호를 새로 붙이고 본문만 바꿔 끼운다
+  const markerAt = cell => state.mark === 'keep' ? cell.marker : markerOf(state.mark, cell.slot);
+  let out;
+  if (state.layout === 'keep') {
+    out = parsed.rows.map(row => {
+      if (row.raw !== undefined) return row.raw;
+      let line = row.prefix;
+      for (const cell of row.cells) {
+        const body = items[picked[cell.slot]];
+        const marker = markerAt(cell);
+        const gap = state.mark === 'keep' ? cell.gap : (marker === '' ? '' : (cell.gap || ' '));
+        line += marker + gap + body + cell.sep;
+      }
+      return line;
+    }).join('\n');
+  } else {
+    // 1행답항~5행답항: 선지를 줄 수에 맞춰 다시 나눈다. 앞줄부터 고르게 채운다
+    const rowCount = Math.min(Number(state.layout), slots.length);
+    const lines = [];
+    let at = 0;
+    for (let r = 0; r < rowCount; r++) {
+      const take = Math.ceil((slots.length - at) / (rowCount - r));
+      const cells = [];
+      for (let k = 0; k < take; k++, at++) {
+        const cell = slots[at];
+        const marker = markerAt(cell);
+        const gap = marker === '' ? '' : (state.mark === 'keep' ? (cell.gap || ' ') : ' ');
+        cells.push(marker + gap + items[picked[cell.slot]]);
+      }
+      lines.push(cells.join('\t'));
+    }
+    out = lines.join('\n');
+  }
+
+  state.outText = out;
+  $('output').textContent = out;
+  $('resultSec').classList.remove('hidden');
+  $('copyMsg').textContent = '';
+  $('rowMsg').textContent = '표의 줄을 누르면 그 선지만 복사합니다.';
+
+  // 아래 표: 새 자리의 번호와 글자 수
+  state.rowText = slots.map(cell => items[picked[cell.slot]]);
+  $('tbody').innerHTML = slots.map((cell, i) => {
+    const from = picked[cell.slot];
+    const body = items[from];
+    const shown = state.mark === 'keep' ? cell.marker : markerOf(state.mark, cell.slot);
+    return '<tr data-i="' + i + '" tabindex="0" title="눌러서 이 선지 복사" '
+      + 'class="cursor-pointer hover:bg-head-soft [&>td]:border [&>td]:border-rule [&>td]:px-3 [&>td]:py-1.5 align-top">'
+      + '<td class="text-center font-semibold">' + esc(shown || (i + 1) + ')') + '</td>'
+      + '<td>' + esc(body) + '</td>'
+      + '<td class="text-center tabular-nums">' + lengthOf(body, noSpace) + '</td>'
+      + '<td class="text-center tabular-nums text-muted">' + (from + 1) + '</td>'
+      + '</tr>';
+  }).join('');
+}
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+/* ───────────── 화면 ───────────── */
+function bindBar(barId, key) {
+  const bar = $(barId);
+  bar.addEventListener('click', e => {
+    const btn = e.target.closest('button[data-val]');
+    if (!btn) return;
+    state[key] = btn.dataset.val;
+    for (const b of bar.querySelectorAll('button[data-val]')) {
+      b.setAttribute('aria-pressed', String(b === btn));
+    }
+    render();
+  });
+}
+bindBar('orderBar', 'order');
+bindBar('markBar', 'mark');
+bindBar('layoutBar', 'layout');
+
+$('input').addEventListener('input', render);
+$('optTrim').addEventListener('change', render);
+$('optNoSpace').addEventListener('change', render);
+
+$('clearBtn').addEventListener('click', () => { $('input').value = ''; render(); $('input').focus(); });
+
+/* 손에 익히라고 두는 예시. 실제 시험지 선지가 아니라 이 도구에서 꾸며 낸 글이다 */
+const SAMPLES = [
+  // 한 줄에 다섯 선지 (1행답항), 탭으로 나뉜 것
+  '① 사과\t② 바나나\t③ 복숭아\t④ 블루베리\t⑤ 참외',
+  // 두 줄에 나눈 답항 (2행답항)
+  '① 동쪽으로 흐른다.\t② 서쪽으로 흐른다.\n'
+  + '③ 남쪽으로 흐르다가 굽는다.\t④ 북쪽으로 흐르다가 바다로 든다.\n'
+  + '⑤ 흐르지 않는다.',
+  // 머리말이 붙은 다섯 선지
+  '① (가) - 물의 온도가 높을수록 빨리 녹는다.\n'
+  + '② (가) - 저어 주면 더 고르게 섞인다.\n'
+  + '③ (나) - 알갱이가 작을수록 녹는 속도가 빨라진다.\n'
+  + '④ (다) - 녹는 양은 온도와 상관이 없다.\n'
+  + '⑤ (다) - 다 녹은 뒤에도 무게의 합은 변하지 않는다.',
+  // ㄱㄴㄷ 보기
+  'ㄱ. 씨앗을 심는다.\n'
+  + 'ㄴ. 햇빛이 드는 곳에 둔다.\n'
+  + 'ㄷ. 흙이 마르지 않게 물을 준다.\n'
+  + 'ㄹ. 싹이 트면 넓은 화분으로 옮겨 심는다.',
+  // 머리표가 붙은 본문
+  '◦ 소금은 물에 녹는다.\n'
+  + '◦ 설탕물을 끓이면 물만 날아간다.\n'
+  + '◦ 모래는 물에 가라앉아 그대로 남는다.\n'
+  + '◦ 기름은 물과 섞이지 않고 위로 뜬다.',
+  // 번호 없이 줄마다 하나씩
+  '세 변의 길이가 모두 같다.\n'
+  + '두 변의 길이가 같다.\n'
+  + '한 각이 직각이다.\n'
+  + '네 각의 크기가 모두 같고 네 변의 길이도 같다.',
+];
+
+let lastSample = -1;
+$('sampleBtn').addEventListener('click', () => {
+  let i = Math.floor(Math.random() * SAMPLES.length);
+  if (SAMPLES.length > 1 && i === lastSample) i = (i + 1) % SAMPLES.length;
+  lastSample = i;
+  $('input').value = SAMPLES[i];
+  render();
+});
+
+/* 글자만 클립보드에 넣는다. 탭이 그대로 있으므로 엑셀에서는 칸이 나뉘어 들어간다 */
+async function copyText(s) {
+  try {
+    await navigator.clipboard.writeText(s);
+    return true;
+  } catch (e) {
+    const ta = document.createElement('textarea');
+    ta.value = s;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      return document.execCommand('copy');
+    } finally {
+      ta.remove();
+    }
+  }
+}
+
+$('copyBtn').addEventListener('click', async () => {
+  const done = await copyText(state.outText);
+  $('copyMsg').textContent = done
+    ? '복사했습니다. 엑셀이나 한글에 그대로 붙여 넣으세요.'
+    : '이 브라우저에서는 클립보드에 쓸 수 없습니다. 결과 칸을 직접 복사하세요.';
+});
+
+/* 표의 줄을 누르면 그 선지 한 개만 복사한다 */
+async function copyRow(tr) {
+  const text = state.rowText[Number(tr.dataset.i)];
+  if (text === undefined) return;
+  const done = await copyText(text);
+  $('rowMsg').textContent = done
+    ? '이 선지를 복사했습니다: ' + text
+    : '이 브라우저에서는 클립보드에 쓸 수 없습니다.';
+}
+
+$('tbody').addEventListener('click', e => {
+  const tr = e.target.closest('tr[data-i]');
+  if (tr) copyRow(tr);
+});
+$('tbody').addEventListener('keydown', e => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const tr = e.target.closest('tr[data-i]');
+  if (!tr) return;
+  e.preventDefault();
+  copyRow(tr);
+});
+
+render();
+</script>
+</body>
+</html>
