@@ -52,7 +52,7 @@ tailwind.config = {
 
   <header class="space-y-1">
     <h1 class="text-2xl font-bold">지필평가 선택지 정렬기</h1>
-    <p class="text-muted">원안지 선택지나 보기를 붙여 넣으면, 자동으로 길이순이나 사전순으로 정렬합니다. 모든 입력 정보는 사용자의 브라우저 안에서만 처리하고 외부로 전송되지 않습니다.</p>
+    <p class="text-muted">원안지 선택지나 보기를 붙여 넣으면, 자동으로 글자 수나 사전순으로 정렬합니다. 모든 입력 정보는 사용자의 브라우저 안에서만 처리하고 외부로 전송되지 않습니다.</p>
   </header>
 
   <!-- 메뉴바: 정렬 기준과 번호 모양 -->
@@ -61,12 +61,12 @@ tailwind.config = {
       <span class="font-semibold">정렬</span>
       <div id="orderBar" role="group" aria-label="정렬 기준" class="segbar overflow-hidden rounded border border-rule-strong">
         <button type="button" class="seg" data-val="orig" aria-pressed="false">원본 순서</button>
-        <button type="button" class="seg" data-val="len" aria-pressed="true">길이순</button>
-        <button type="button" class="seg" data-val="lenDesc" aria-pressed="false">길이 역순</button>
+        <button type="button" class="seg" data-val="len" aria-pressed="true">짧은 순</button>
+        <button type="button" class="seg" data-val="lenDesc" aria-pressed="false">긴 순</button>
         <button type="button" class="seg" data-val="abc" aria-pressed="false">사전순</button>
         <button type="button" class="seg" data-val="abcDesc" aria-pressed="false">사전 역순</button>
-        <button type="button" class="seg" data-val="headLen" aria-pressed="false">머리말 묶음 → 길이순</button>
-        <button type="button" class="seg" data-val="headLenDesc" aria-pressed="false">머리말 묶음 → 길이 역순</button>
+        <button type="button" class="seg" data-val="headLen" aria-pressed="false">머리말 묶음 → 짧은 순</button>
+        <button type="button" class="seg" data-val="headLenDesc" aria-pressed="false">머리말 묶음 → 긴 순</button>
       </div>
     </div>
     <p id="headMsg" class="hidden text-muted"></p>
@@ -112,9 +112,9 @@ tailwind.config = {
     <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
       <span class="font-semibold">옵션</span>
       <div class="flex flex-wrap items-center gap-x-5 gap-y-2">
-        <label class="flex items-center gap-2"><input id="optTrim" type="checkbox" checked class="h-4 w-4 accent-head"> 선택지 앞뒤 공백 다듬기</label>
-        <label class="flex items-center gap-2"><input id="optJoin" type="checkbox" checked class="h-4 w-4 accent-head"> 쪼개진 선택지 한 줄로 합치기</label>
-        <label class="flex items-center gap-2"><input id="optNoSpace" type="checkbox" class="h-4 w-4 accent-head"> 길이 셀 때 공백 빼기</label>
+        <label class="flex items-center gap-2"><input id="optTrim" type="checkbox" checked class="h-4 w-4 accent-head"> 선택지 앞뒤 공백 제거하기</label>
+        <label class="flex items-center gap-2"><input id="optJoin" type="checkbox" checked class="h-4 w-4 accent-head"> 여러 줄 선택지를 한 줄로 합치기</label>
+        <label class="flex items-center gap-2"><input id="optNoSpace" type="checkbox" class="h-4 w-4 accent-head"> 글자 수 계산 시 공백 제외하기</label>
       </div>
     </div>
   </section>
@@ -154,7 +154,7 @@ tailwind.config = {
             <th class="w-16 whitespace-nowrap">번호</th>
             <th>선택지</th>
             <th class="w-24 whitespace-nowrap">글자 수</th>
-            <th class="w-24 whitespace-nowrap">본래 자리</th>
+            <th class="w-24 whitespace-nowrap">원본 순서</th>
           </tr>
         </thead>
         <tbody id="tbody"></tbody>
@@ -203,8 +203,8 @@ function render() {
   if (state.order === 'headLen' || state.order === 'headLenDesc') {
     const info = X.headInfo(r.items);
     headBox.textContent = info.ok
-      ? '머리말 ' + info.kinds.slice(0, 6).join(' · ') + ' 로 묶은 뒤, 묶음 안에서 길이순으로 늘어놓았습니다.'
-      : '앞머리에 (가)나 A. 같은 머리말이 없어 묶을 것이 없습니다. 길이순과 같은 결과입니다.';
+      ? '머리말 ' + info.kinds.slice(0, 6).join(' · ') + ' 로 묶은 뒤, 묶음 안에서 짧은 순으로 늘어놓았습니다.'
+      : '앞머리에 (가)나 A. 같은 머리말이 없어 묶을 것이 없습니다. 짧은 순과 같은 결과입니다.';
     headBox.classList.remove('hidden');
   } else {
     headBox.classList.add('hidden');
