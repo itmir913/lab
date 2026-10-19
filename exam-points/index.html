@@ -100,7 +100,7 @@ tailwind.config = {
         <button id="runBtn" type="button" class="rounded bg-head px-5 py-1.5 font-semibold text-white hover:bg-ink">계산</button>
       </div>
       <details id="advanced" class="text-sm">
-      <summary class="w-fit cursor-pointer py-2 text-muted hover:text-ink">세부 조건</summary>
+      <summary class="w-fit cursor-pointer py-2 font-semibold text-head hover:text-ink">세부 조건</summary>
       <div class="mt-2 grid gap-3 rounded border border-rule p-3 sm:grid-cols-2">
         <!-- label로 감싸면 빈 곳을 눌러도 안의 "자동" 버튼이 눌리므로 div를 쓴다 -->
         <div class="space-y-1">
@@ -144,20 +144,20 @@ tailwind.config = {
   <section id="resultSec" class="hidden space-y-2" aria-label="배점표">
     <div id="navRow" class="flex flex-wrap items-center gap-2 print:hidden">
       <div class="flex items-center rounded border border-rule-strong">
-        <button id="prevBtn" type="button" aria-label="배점 가지수 줄이기" class="px-3 py-1.5 text-lg leading-none hover:bg-wash disabled:text-rule disabled:hover:bg-transparent">◀</button>
+        <button id="prevBtn" type="button" aria-label="배점 가지수 줄이기" class="px-3 py-1.5 text-lg leading-none font-semibold text-head hover:bg-head-soft disabled:text-rule disabled:hover:bg-transparent">◀</button>
         <span id="pickLabel" class="min-w-[14rem] border-x border-rule px-3 py-1.5 text-center font-semibold tabular-nums" aria-live="polite"></span>
-        <button id="nextBtn" type="button" aria-label="배점 가지수 늘리기" class="px-3 py-1.5 text-lg leading-none hover:bg-wash disabled:text-rule disabled:hover:bg-transparent">▶</button>
+        <button id="nextBtn" type="button" aria-label="배점 가지수 늘리기" class="px-3 py-1.5 text-lg leading-none font-semibold text-head hover:bg-head-soft disabled:text-rule disabled:hover:bg-transparent">▶</button>
       </div>
       <!-- 같은 가지수 안에서 다음으로 좋은 안 -->
       <div class="flex items-center rounded border border-rule-strong">
-        <button id="altPrev" type="button" aria-label="같은 가지수의 이전 안" class="px-3 py-1.5 leading-none hover:bg-wash disabled:text-rule disabled:hover:bg-transparent">‹</button>
+        <button id="altPrev" type="button" aria-label="같은 가지수의 이전 안" class="px-3 py-1.5 leading-none font-semibold text-head hover:bg-head-soft disabled:text-rule disabled:hover:bg-transparent">‹</button>
         <span id="altLabel" class="min-w-[6.5rem] border-x border-rule px-3 py-1.5 text-center tabular-nums" aria-live="polite"></span>
-        <button id="altNext" type="button" aria-label="같은 가지수의 다른 안" class="px-3 py-1.5 leading-none hover:bg-wash disabled:text-rule disabled:hover:bg-transparent">다른 안 ›</button>
+        <button id="altNext" type="button" aria-label="같은 가지수의 다른 안" class="px-3 py-1.5 leading-none font-semibold text-head hover:bg-head-soft disabled:text-rule disabled:hover:bg-transparent">다른 안 ›</button>
       </div>
       <span class="flex w-full flex-wrap items-center justify-end gap-2 sm:ml-auto sm:w-auto">
         <span id="copyMsg" class="text-sm text-muted" aria-live="polite"></span>
         <button id="copyBtn" type="button" class="rounded bg-head px-3 py-1.5 font-semibold text-white hover:bg-ink">표 복사</button>
-        <button id="linkBtn" type="button" class="rounded border border-rule-strong px-3 py-1.5 hover:bg-wash">링크 복사</button>
+        <button id="linkBtn" type="button" class="rounded border border-rule-strong px-3 py-1.5 font-semibold text-head hover:bg-head-soft">링크 복사</button>
       </span>
     </div>
 
@@ -667,7 +667,7 @@ function renderStats(s, step) {
 function countCell(r, step) {
   const n = Number($('count').value);
   const td = el('td', '!p-0');
-  const input = el('input', 'cell !text-base' + (r.locked ? ' font-semibold' : ''));
+  const input = el('input', 'cell !text-base cursor-text hover:bg-head-soft/60' + (r.locked ? ' font-semibold text-head' : ''));
   input.type = 'number';
   input.min = '0';
   input.max = String(n);
