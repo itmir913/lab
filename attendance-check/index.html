@@ -71,7 +71,7 @@
         <div class="flex flex-wrap items-center gap-3 p-3 border-b border-slate-200 shrink-0">
           <input id="search" type="search" placeholder="번호·성명 검색" class="rounded-lg border border-slate-300 px-3 py-1.5 text-base w-48">
           <span id="filterLabel" class="text-base text-slate-600"></span>
-          <button id="clearFilter" class="text-base text-blue-600 hover:underline hidden">필터 해제</button>
+          <button id="clearFilter" class="text-base text-blue-600 hover:underline hidden">전체 보기</button>
         </div>
         <div class="overflow-auto max-h-[70vh] xl:max-h-none xl:flex-1 xl:min-h-0">
           <table class="w-full text-base">
@@ -427,7 +427,7 @@ const FLAGS = {
 };
 // 카드 묶음: 대조 결과 / 신고서 내부 점검 / 대조 제외
 const CARD_GROUPS = [
-  { title: '신고서 ↔ NEIS 대조', hint: 'PDF와 NEIS 두 장부를 대조해 본 결과', keys: ['all', 'ok', 'diff', 'slot', 'memo', 'noPdf', 'noNeis', 'name'] },
+  { title: '신고서 ↔ NEIS 대조', hint: 'PDF와 NEIS 두 장부를 대조해 본 결과', keys: ['todo', 'all', 'ok', 'diff', 'slot', 'memo', 'noPdf', 'noNeis', 'name'] },
   { title: '신고서 내부 점검', hint: 'PDF 신고서 자체의 오류 (대조 결과와 병기)', keys: ['req', 'days'] },
   { title: '대조 제외', hint: '신고서 제출 대상이 아니므로 대조에서 제외한 항목', keys: ['exempt'] },
 ];
@@ -619,7 +619,7 @@ async function run(pdfBuf, xlsxBuf) {
   const holidays = parseHolidays($('holidays').value);
   const { results } = compare(neis, records, holidays);
   state.results = results;
-  state.filter = null;
+  state.filter = 'todo';
   $('status').textContent = `완료 — NEIS ${neis.length}건, 신고서 ${records.length}장 / ${doc.numPages}쪽`;
   renderCards();
   renderWarnings(errors);
@@ -646,7 +646,11 @@ function countBy(results) {
 }
 
 const ALL = { label: '전체', badge: 'bg-slate-100 text-slate-800', desc: '학생·일자별 대조 결과 전체' };
-const defOf = k => k === 'all' ? ALL : STATUS[k] || FLAGS[k];
+// 확인 필요: 일치·대조 제외가 아니거나, 신고서 내부 점검 등 추가 표기가 1개 이상인 항목 (기본 필터)
+const needsCheck = r => !['ok', 'exempt'].includes(r.status) || Object.values(FLAGS).some(f => f.test(r));
+const TODO = { label: '확인 필요', badge: 'bg-red-100 text-red-800', test: needsCheck,
+               desc: '불일치·누락·미입력 항목 및 성명 상이·신고서 내부 점검 해당 항목 (일치·대조 제외 이외의 전 항목)' };
+const defOf = k => k === 'all' ? ALL : k === 'todo' ? TODO : STATUS[k] || FLAGS[k];
 
 // 필터 칩: 묶음별 1행. 설명은 칩의 title과, 선택된 필터에 한해 하단 1행으로 표시
 function renderCards() {
@@ -666,6 +670,11 @@ function renderCards() {
     return b;
   };
   const groups = el('div', 'bg-white rounded-xl border border-slate-200 p-3 space-y-2');
+  const todo = state.results.filter(needsCheck).length;
+  const sum = el('div', 'flex flex-wrap items-baseline gap-x-3 pb-2 border-b border-slate-100');
+  sum.append(el('span', 'text-2xl font-bold ' + (todo ? 'text-red-700' : 'text-emerald-700'), todo ? `확인 필요 ${todo}건` : '확인 필요 항목 없음'),
+             el('span', 'text-base text-slate-500', `전체 ${state.results.length}건`));
+  groups.append(sum);
   for (const g of CARD_GROUPS) {
     const row = el('div', 'flex flex-col gap-1 sm:flex-row sm:items-start sm:gap-3');
     const head = el('span', 'sm:w-40 shrink-0 sm:pt-1.5 text-base font-semibold text-slate-600', g.title);
@@ -678,7 +687,7 @@ function renderCards() {
   groups.append(el('p', 'text-base text-slate-500 border-t border-slate-100 pt-2 break-keep', defOf(state.filter || 'all').desc));
   box.append(groups);
 }
-const matchFilter = (r, k) => STATUS[k] ? r.status === k : FLAGS[k].test(r);
+const matchFilter = (r, k) => STATUS[k] ? r.status === k : defOf(k).test(r);
 
 function renderWarnings(errors) {
   const w = $('warnBox');
@@ -704,6 +713,13 @@ function renderTable() {
   $('clearFilter').classList.toggle('hidden', !state.filter);
   const tb = $('tbody');
   tb.replaceChildren();
+  if (!rows.length) {
+    const td = el('td', 'px-3 py-6 text-center text-slate-500', state.filter === 'todo' && !q ? '확인이 필요한 항목이 없습니다' : '해당 항목 없음');
+    td.colSpan = 9;
+    const tr = el('tr');
+    tr.append(td);
+    tb.append(tr);
+  }
   for (const r of rows) {
     const s = STATUS[r.status];
     const tr = el('tr', 'border-t border-slate-100 cursor-pointer hover:bg-blue-50 ' + s.row);
