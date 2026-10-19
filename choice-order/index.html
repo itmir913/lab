@@ -98,6 +98,7 @@ tailwind.config = {
       <span class="font-semibold">구분자</span>
       <div id="sepBar" role="group" aria-label="선지 사이 구분자" class="flex flex-wrap overflow-hidden rounded border border-rule-strong">
         <button type="button" class="seg" data-val="keep" aria-pressed="true">원본 구분자</button>
+        <button type="button" class="seg" data-val="sp1" aria-pressed="false">공백 1칸</button>
         <button type="button" class="seg" data-val="tab" aria-pressed="false">탭</button>
         <button type="button" class="seg" data-val="tab2" aria-pressed="false">탭 2칸</button>
         <button type="button" class="seg" data-val="sp2" aria-pressed="false">공백 2칸</button>
@@ -363,7 +364,7 @@ function render() {
   // 자리마다 번호를 새로 붙이고 본문만 바꿔 끼운다
   const markerAt = cell => state.mark === 'keep' ? cell.marker : markerOf(state.mark, cell.slot);
   // 선지 사이를 무엇으로 띄울지. 원본 구분자면 붙여 넣은 글의 것을 그대로 쓴다
-  const SEP = { tab: '\t', tab2: '\t\t', sp2: '  ', sp4: '    ' };
+  const SEP = { sp1: ' ', tab: '\t', tab2: '\t\t', sp2: '  ', sp4: '    ' };
   const sepAfter = (cell, isLast) =>
     state.sep === 'keep' || isLast ? cell.sep : SEP[state.sep];
   let out;
