@@ -26,7 +26,8 @@
   const WEIGHT = { kind: 1000, crowd: 1, skip: 4, spread: 1 };
   // 배점 범위의 기본값: 평균 ±12.5%
   const AUTO_SPREAD = 0.125;
-  const AUTO_TIER_RATIO = [2, 5, 3];
+  // 난이도 비율 기본값 (상 : 중 : 하)
+  const AUTO_TIER_RATIO = [3, 4, 3];
   // 동적계획법 표 크기 한도 (최댓값·개수 두 표, Float64 기준 약 48MB)
   const MAX_STATES = 3e6;
 
@@ -161,7 +162,8 @@
     return { step, n, T, vals, tiers, maxPer, maxSkip, kinds, fmt, mean: T / n, locked, forced, rank, lockMsg };
   }
 
-  function solve(opts, { limit = 10, nodeBudget = 2e6 } = {}) {
+  // perKinds: 배점 종류 수를 정하지 않았을 때, 가능한 종류 수마다 가장 좋은 해를 하나씩 찾는다 (byKinds)
+  function solve(opts, { limit = 10, nodeBudget = 2e6, perKinds = false } = {}) {
     const t0 = Date.now();
     const P = prepare(opts);
     if (P.error) return P;
@@ -182,7 +184,11 @@
     if (E0 < 0 || (nF > 0 && !free.length) || (kinds && (kF > nF || (nF > 0 && kF < 1)))) return infeasible();
     const d = vals.map(v => v - base);
     const S = maxSkip + 2;                 // 0 = 아직 시작 전, 1+s = 직전에 s칸 건너뜀
-    const KD = kinds ? kF + 1 : 1;         // 종류 수를 고정할 때만 남은 종류 수를 상태로 둔다
+    let byKinds = perKinds && !kinds;
+    // 종류 수를 고정하거나 종류 수별로 찾을 때만 남은 종류 수를 상태로 둔다
+    let KD = kinds ? kF + 1 : byKinds ? Math.min(free.length, nF) + 1 : 1;
+    // 종류 수별 표가 너무 크면 (배점 간격이 아주 촘촘할 때) 가장 좋은 종류 수 하나만 찾는다
+    if (byKinds && (m + 1) * (nF + 1) * (E0 + 1) * S * KD > MAX_STATES) { byKinds = false; KD = 1; }
     const size = (m + 1) * (nF + 1) * (E0 + 1) * S * KD;
     if (size > MAX_STATES) return { error: '탐색 범위가 너무 넓습니다. 최소·최대 배점을 좁히거나 배점 간격을 늘리세요.' };
 
@@ -284,43 +290,67 @@
       }
     }
 
-    const q0 = KD === 1 ? 0 : kF;
-    const start = idx(0, nF, E0, 0, q0);
-    if (f[start] === -Infinity) return infeasible();
-
     // 분기한정: 지금까지 얻은 점수 + f(남은 상태)가 상위 limit개의 마지막보다 낮으면 버린다
-    const top = [];
-    const floor = () => (top.length < limit ? -Infinity : top[top.length - 1].score);
-    const picked = [];
     let nodes = 0, cut = false;
-
-    function record(score) {
-      const sol = { score, groups: picked.slice() };
-      let at = top.length;
-      while (at > 0 && top[at - 1].score < score - 1e-9) at--;
-      top.splice(at, 0, sol);
-      if (top.length > limit) top.pop();
+    function enumerate(q0, limit) {
+      const top = [];
+      const floor = () => (top.length < limit ? -Infinity : top[top.length - 1].score);
+      const picked = [];
+      function record(score) {
+        const sol = { score, groups: picked.slice() };
+        let at = top.length;
+        while (at > 0 && top[at - 1].score < score - 1e-9) at--;
+        top.splice(at, 0, sol);
+        if (top.length > limit) top.pop();
+      }
+      function dfs(i, r, e, s, q, acc) {
+        if (done(i, r, e, q)) { record(acc); return; }
+        if (i === m || cut) return;
+        if (acc + f[idx(i, r, e, s, q)] <= floor() + 1e-9) return;
+        if (++nodes > nodeBudget) { cut = true; return; }
+        const next = moves(i, r, e, s, q).sort((a, b) => (b[1] + f[b[2]]) - (a[1] + f[a[2]]));
+        for (const [c, g, , nr, ne, ns, nq] of next) {
+          if (c) picked.push({ unit: vals[i], count: c });
+          dfs(i + 1, nr, ne, ns, nq, acc + g);
+          if (c) picked.pop();
+        }
+      }
+      dfs(0, nF, E0, 0, q0, 0);
+      return top;
     }
 
-    function dfs(i, r, e, s, q, acc) {
-      if (done(i, r, e, q)) { record(acc); return; }
-      if (i === m || cut) return;
-      if (acc + f[idx(i, r, e, s, q)] <= floor() + 1e-9) return;
-      if (++nodes > nodeBudget) { cut = true; return; }
-      const next = moves(i, r, e, s, q).sort((a, b) => (b[1] + f[b[2]]) - (a[1] + f[a[2]]));
-      for (const [c, g, , nr, ne, ns, nq] of next) {
-        if (c) picked.push({ unit: vals[i], count: c });
-        dfs(i + 1, nr, ne, ns, nq, acc + g);
-        if (c) picked.pop();
+    let solutions, found, kindsList = null;
+    if (byKinds) {
+      kindsList = [];
+      found = 0;
+      for (let q = 0; q < KD; q++) {
+        const st = idx(0, nF, E0, 0, q);
+        if (f[st] === -Infinity) continue;
+        const [t] = enumerate(q, 1);
+        kindsList.push({ kinds: q + locked.size, found: cnt[st], score: t.score, solution: describe(P, t.groups, 1, t.score) });
+        found += cnt[st];
+      }
+      if (!kindsList.length) return infeasible();
+      solutions = kindsList.slice().sort((a, b) => b.score - a.score).slice(0, 1).map(k => k.solution);
+    } else {
+      const q0 = KD === 1 ? 0 : kF;
+      const start = idx(0, nF, E0, 0, q0);
+      if (f[start] === -Infinity) return infeasible();
+      solutions = enumerate(q0, limit).map((t, k) => describe(P, t.groups, k + 1, t.score));
+      found = cnt[start];
+      if (perKinds && !kinds) {
+        const best = solutions[0];
+        kindsList = [{ kinds: best.kinds, found, score: best.score, solution: best, onlyBest: true }];
       }
     }
-    dfs(0, nF, E0, 0, q0, 0);
 
     return {
-      solutions: top.map((t, k) => describe(P, t.groups, k + 1, t.score)),
+      solutions,
+      // 종류 수별 가장 좋은 해 [{ kinds, found, score, solution }] (perKinds일 때)
+      byKinds: kindsList,
       options: opts,
       // 조건을 만족하는 조합의 총 개수 (아주 크면 근삿값)
-      found: cnt[start],
+      found,
       complete: !cut,
       nodes,
       ms: Date.now() - t0,
@@ -358,11 +388,11 @@
     return first;
   }
 
-  // 미리 계산해 둔 해(배점 단위·문항 수 목록)를 화면용으로 풀어 쓴다
-  function expand(opts, list) {
+  // 미리 계산해 둔 해 하나(배점 단위·문항 수 목록)를 화면용으로 풀어 쓴다
+  function expand(opts, groups) {
     const P = prepare(opts);
-    if (P.error) return [];
-    return list.map((groups, k) => describe(P, groups.map(([unit, count]) => ({ unit, count })), k + 1, null));
+    if (P.error) return null;
+    return describe(P, groups.map(([unit, count]) => ({ unit, count })), 1, null);
   }
 
   // m문항을 틀리는 모든 경우(문항 조합)를 감점 합계별로 센다.
