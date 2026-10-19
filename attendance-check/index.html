@@ -34,11 +34,11 @@ tailwind.config = {
 <style>
   body { word-break: keep-all; overflow-wrap: break-word; }
   :focus-visible { outline: 2px solid #1D2B3A; outline-offset: 2px; }
-  kbd { font-family: inherit; font-size: .85em; border: 1px solid #CDD6D1; border-bottom-width: 2px; border-radius: 4px; padding: 0 .35em; background: #fff; }
+  kbd { font-family: inherit; border: 1px solid #CDD6D1; border-bottom-width: 2px; border-radius: 4px; padding: 0 .35em; background: #fff; }
 
   /* 확인 완료 도장: 비어 있으면 점선 원, 누르면 인주색 '확인' 날인 */
-  .stamp { width: 2rem; height: 2rem; border-radius: 9999px; border: 1.5px dashed #8FA39A; color: transparent;
-           font-size: .75rem; font-weight: 700; line-height: 1; display: inline-grid; place-items: center; }
+  .stamp { width: 2.75rem; height: 2.75rem; border-radius: 9999px; border: 1.5px dashed #8FA39A; color: transparent;
+           font-weight: 700; line-height: 1; display: inline-grid; place-items: center; }
   .stamp:hover { border-color: #1D2B3A; }
   .stamp.is-on { border: 2px solid #C2352B; color: #C2352B; background: rgba(194, 53, 43, .06);
                                 transform: rotate(-12deg); animation: stamp-in .18s ease-out; }

@@ -38,6 +38,13 @@ jobs:
       - name: Configure Pages
         uses: actions/configure-pages@v6
 
+      # 배포 전에 검사한다. 하나라도 걸리면 사이트는 그대로 둔다
+      - name: Check text size
+        run: python3 .github/scripts/check_text_size.py
+
+      - name: Test exam-points solver
+        run: node exam-points/test.js
+
       - name: Build manifest
         run: python3 .github/scripts/build_manifest.py
 
