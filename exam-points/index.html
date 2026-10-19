@@ -93,11 +93,17 @@ tailwind.config = {
       </table>
     </div>
 
-    <div class="mt-2 flex flex-wrap items-start gap-3">
-      <details id="advanced" class="flex-1 min-w-0 text-sm">
-      <summary class="cursor-pointer py-1 text-muted hover:text-ink">세부 조건</summary>
+    <!-- 세부 조건은 계산 버튼 아래까지 전체 너비로 펼친다. 버튼은 접힌 제목 줄 오른쪽에 얹는다 -->
+    <div class="relative mt-2">
+      <div class="absolute right-0 top-0 flex items-center gap-3">
+        <span id="staleMsg" class="hidden text-sm text-warn-fg">조건이 바뀌었습니다</span>
+        <button id="runBtn" type="button" class="rounded bg-head px-5 py-1.5 font-semibold text-white hover:bg-ink">계산</button>
+      </div>
+      <details id="advanced" class="text-sm">
+      <summary class="w-fit cursor-pointer py-2 text-muted hover:text-ink">세부 조건</summary>
       <div class="mt-2 grid gap-3 rounded border border-rule p-3 sm:grid-cols-2">
-        <label class="space-y-1">
+        <!-- label로 감싸면 빈 곳을 눌러도 안의 "자동" 버튼이 눌리므로 div를 쓴다 -->
+        <div class="space-y-1">
           <span class="flex items-center gap-2">배점 범위
             <button id="rangeAuto" type="button" class="hidden underline underline-offset-2 text-muted hover:text-seal">자동</button>
           </span>
@@ -107,13 +113,13 @@ tailwind.config = {
             <input id="max" type="number" step="any" aria-label="최대 배점" class="field">
           </span>
           <span id="rangeHint" class="block text-muted"></span>
-        </label>
-        <label class="space-y-1">
-          <span class="flex items-center gap-2">한 배점당 최대 문항 수
+        </div>
+        <div class="space-y-1">
+          <span class="flex items-center gap-2"><label for="maxPer">한 배점당 최대 문항 수</label>
             <button id="maxPerAuto" type="button" class="hidden underline underline-offset-2 text-muted hover:text-seal">자동</button>
           </span>
           <input id="maxPer" type="number" min="1" step="1" class="field">
-        </label>
+        </div>
         <label class="space-y-1">
           <span class="block">배점 건너뛰기</span>
           <select id="maxSkip" class="field">
@@ -128,8 +134,6 @@ tailwind.config = {
         </label>
       </div>
       </details>
-      <span id="staleMsg" class="hidden py-1.5 text-sm text-warn-fg">조건이 바뀌었습니다</span>
-      <button id="runBtn" type="button" class="rounded bg-head px-5 py-1.5 font-semibold text-white hover:bg-ink">계산</button>
     </div>
   </section>
 
@@ -143,6 +147,12 @@ tailwind.config = {
         <button id="prevBtn" type="button" aria-label="배점 가지수 줄이기" class="px-3 py-1.5 text-lg leading-none hover:bg-wash disabled:text-rule disabled:hover:bg-transparent">◀</button>
         <span id="pickLabel" class="min-w-[14rem] border-x border-rule px-3 py-1.5 text-center font-semibold tabular-nums" aria-live="polite"></span>
         <button id="nextBtn" type="button" aria-label="배점 가지수 늘리기" class="px-3 py-1.5 text-lg leading-none hover:bg-wash disabled:text-rule disabled:hover:bg-transparent">▶</button>
+      </div>
+      <!-- 같은 가지수 안에서 다음으로 좋은 안 -->
+      <div class="flex items-center rounded border border-rule-strong">
+        <button id="altPrev" type="button" aria-label="같은 가지수의 이전 안" class="px-3 py-1.5 leading-none hover:bg-wash disabled:text-rule disabled:hover:bg-transparent">‹</button>
+        <span id="altLabel" class="min-w-[6.5rem] border-x border-rule px-3 py-1.5 text-center tabular-nums" aria-live="polite"></span>
+        <button id="altNext" type="button" aria-label="같은 가지수의 다른 안" class="px-3 py-1.5 leading-none hover:bg-wash disabled:text-rule disabled:hover:bg-transparent">다른 안 ›</button>
       </div>
       <span class="ml-auto flex flex-wrap items-center justify-end gap-2">
         <span id="copyMsg" class="text-sm text-muted" aria-live="polite"></span>
@@ -189,6 +199,9 @@ const state = {
   auto: { range: true, maxPer: true },
   result: null,           // { list: 배점 가지수별 가장 좋은 안, best: 가장 좋은 가지수, options }
   view: 0,                // 지금 보고 있는 배점 가지수
+  calculated: null,       // 마지막으로 계산한 조건 (바뀌었는지 비교용)
+  pendingAlt: 0,          // 주소로 연 "몇 번째 안" (0 = 가장 좋은 안)
+  altBusy: false,
   locks: [],              // [[배점, 문항 수], …]
   precalc: null,          // key → 항목
 };
@@ -263,9 +276,12 @@ function checkInputs(o) {
 
 // 입력 중에는 계산하지 않는다 - 조건을 다 넣고 [계산]이나 Enter를 누를 때만 계산한다.
 // 그 사이에는 지난 결과를 흐리게 두어 아직 반영되지 않았음을 보여 준다
+// 실제로 값이 바뀌었을 때만 표시한다 (지난 계산의 조건과 비교)
+const snapshot = () => JSON.stringify(readOptions());
 function schedule() {
-  $('staleMsg').classList.remove('hidden');
-  $('resultSec').classList.add('opacity-40');
+  const changed = snapshot() !== state.calculated;
+  $('staleMsg').classList.toggle('hidden', !changed);
+  $('resultSec').classList.toggle('opacity-40', changed);
   writeUrl();
 }
 /* ───────────── 계산 스레드 (Web Worker) ───────────── */
@@ -377,6 +393,8 @@ function writeUrl() {
   if (!state.auto.maxPer) put('maxPer', $('maxPer').value);
   if ($('kinds').value !== '0') put('kinds', $('kinds').value);
   if ($('maxSkip').value !== '1') put('skip', $('maxSkip').value);
+  const e = state.result && entry();
+  if (e && e.alt > 0) put('alt', e.alt + 1);
   const ex = $('exclude').value.split(/[,\s]+/).filter(Boolean).join(',');
   if (ex) put('exclude', ex);
   if (state.locks.length) put('lock', state.locks.map(([v, c]) => `${v}x${c}`).join(','));
@@ -405,6 +423,8 @@ function readUrl() {
       .filter(([v, c]) => v > 0 && Number.isInteger(c) && c >= 0)
       .sort((a, b) => b[0] - a[0]);
   }
+  const alt = parseInt(q.get('alt'), 10);
+  if (alt > 1) state.pendingAlt = alt - 1;
   if (has('min') || has('maxPer') || has('skip') || has('exclude')) $('advanced').open = true;
 }
 
@@ -421,6 +441,7 @@ function setKindsOptions(ks, value, best) {
 // stale(): 더 새 계산이 시작됐으면 true - 그때는 결과를 버린다
 async function run(stale = () => false) {
   const o = readOptions();
+  state.calculated = snapshot();
   const bad = checkInputs(o);
   if (bad) return showError(bad);
 
@@ -437,7 +458,8 @@ async function run(stale = () => false) {
   }
   if (res.error) return showError(res.error);
 
-  const list = res.byKinds.map(k => ({ ...k, relaxed: res.relaxed, options: res.options }));
+  // alts: 같은 가지수에서 점수 순으로 찾아 둔 안들, alt: 지금 보는 순번
+  const list = res.byKinds.map(k => ({ ...k, relaxed: res.relaxed, options: res.options, alts: [k.solution], alt: 0 }));
   const best = list.slice().sort((a, b) => b.score - a.score)[0].kinds;
   let want = o.kinds || best;
   // 고른 가지수가 기본 조건으로 안 되면 그 가지수만 따로 (필요하면 조건을 풀어) 찾는다
@@ -445,7 +467,7 @@ async function run(stale = () => false) {
     const r = await solveAsync(o, { limit: 1 });
     if (stale()) return;
     if (r.error) return showError(`배점 ${want}가지로는 나눌 수 없습니다. ` + r.error);
-    list.push({ kinds: want, found: r.found, score: r.solutions[0].score, solution: r.solutions[0], relaxed: r.relaxed, options: r.options });
+    list.push({ kinds: want, found: r.found, score: r.solutions[0].score, solution: r.solutions[0], relaxed: r.relaxed, options: r.options, alts: [r.solutions[0]], alt: 0 });
   }
   list.sort((a, b) => a.kinds - b.kinds);
 
@@ -459,6 +481,12 @@ async function run(stale = () => false) {
   $('errorBox').classList.add('hidden');
   $('resultSec').classList.remove('hidden');
   render();
+  // 주소에 "몇 번째 안"이 있으면 거기까지 찾아 간다
+  if (state.pendingAlt) {
+    const target = state.pendingAlt;
+    state.pendingAlt = 0;
+    await goAlt(target, stale);
+  }
 }
 
 function showError(msg) {
@@ -500,13 +528,14 @@ function entry() {
   return state.result.list.find(k => k.kinds === state.view);
 }
 function current() {
-  return entry().solution;
+  const e = entry();
+  return e.alts[e.alt];
 }
 
 function render() {
   const { list, best } = state.result;
   const e = entry();
-  const s = e.solution;
+  const s = current();
   const step = e.options.step;
   writeUrl();
   renderLocks();
@@ -516,6 +545,9 @@ function render() {
   $('pickLabel').textContent = `배점 ${e.kinds}가지${e.kinds === best ? ' (최적)' : ''} · 조합 ${countText(e.found)}개`;
   $('prevBtn').disabled = at === 0;
   $('nextBtn').disabled = at === list.length - 1;
+  $('altLabel').textContent = e.alt === 0 ? '가장 좋은 안' : `${e.alt + 1}번째 안`;
+  $('altPrev').disabled = e.alt === 0 || state.altBusy;
+  $('altNext').disabled = e.alt + 1 >= e.found || state.altBusy;
 
   const tb = $('tbody');
   tb.replaceChildren();
@@ -560,8 +592,31 @@ function moveView(d) {
   if (!k) return;
   state.view = k.kinds;
   $('kinds').value = k.kinds === best ? '0' : String(k.kinds);
+  // 이미 계산해 둔 가지수로 옮긴 것이므로 "조건이 바뀌었습니다"로 치지 않는다
+  state.calculated = snapshot();
   render();
 }
+// ‹ 다른 안 ›: 같은 가지수에서 점수 순으로 다음 안. 찾아 둔 것을 다 보면 10개씩 더 찾는다
+async function goAlt(target, stale = () => false) {
+  const e = entry();
+  if (target < 0 || target >= e.found) return;
+  if (target >= e.alts.length) {
+    state.altBusy = true;
+    $('altLabel').textContent = '찾는 중…';
+    $('altNext').disabled = true;
+    const r = await solveAsync({ ...e.options, kinds: e.kinds }, { limit: Math.ceil((target + 1) / 10) * 10 });
+    state.altBusy = false;
+    if (stale() || entry() !== e) return;
+    if (r.error) { $('copyMsg').textContent = r.error; render(); return; }
+    e.alts = r.solutions;
+    e.found = r.found;
+    target = Math.min(target, e.alts.length - 1);
+  }
+  e.alt = target;
+  render();
+}
+$('altPrev').addEventListener('click', () => goAlt(entry().alt - 1));
+$('altNext').addEventListener('click', () => goAlt(entry().alt + 1));
 $('prevBtn').addEventListener('click', () => moveView(-1));
 $('nextBtn').addEventListener('click', () => moveView(1));
 
