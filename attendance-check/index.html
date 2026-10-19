@@ -727,10 +727,28 @@ function renderWarnings(errors) {
   w.replaceChildren();
   if (!errors.length) { w.classList.add('hidden'); return; }
   w.classList.remove('hidden');
-  if (errors.length) {
-    w.append(el('div', 'font-semibold', `PDF 판독 실패 ${errors.length}쪽 (대조에서 제외됨)`));
-    w.append(el('div', '', errors.map(e => `${e.page}쪽: ${e.why}`).join(' · ')));
+  w.append(el('div', 'font-semibold', `PDF 판독 실패 ${errors.length}쪽 (대조에서 제외됨) · 클릭하면 원본 표시`));
+  const list = el('div', 'flex flex-wrap gap-2 mt-2');
+  for (const e of errors) {
+    const b = el('button', 'rounded-lg border border-amber-300 bg-white px-2 py-0.5 text-base hover:border-amber-500', `${e.page}쪽: ${e.why}`);
+    b.type = 'button';
+    b.onclick = () => showFailedPage(e);
+    list.append(b);
   }
+  w.append(list);
+}
+// 판독 실패 쪽은 표에 행이 없으므로 선택을 해제하고 원본만 표시
+function showFailedPage(e) {
+  const prev = state.visible.find(v => keyOf(v) === state.selKey);
+  state.selKey = null;
+  if (prev) state.rowEls.get(keyOf(prev)).className = rowClass(prev);
+  const box = el('div', 'rounded-lg border border-amber-200 bg-amber-50 p-3');
+  box.append(el('div', 'text-base font-semibold text-amber-800', `${e.page}쪽 판독 실패`),
+             el('div', 'text-base break-keep', `${e.why} — 이 쪽은 대조에서 제외되었으므로 원본을 직접 확인하세요.`));
+  $('detail').replaceChildren(box);
+  openDetail(true);
+  $('pdfCanvas').classList.remove('hidden');
+  renderPage(e.page);
 }
 
 function setFilter(k) { state.filter = k; renderCards(); renderTable(); }
