@@ -164,10 +164,10 @@ tailwind.config = {
     <div id="lockBar" class="hidden flex flex-wrap items-center gap-2 text-sm"></div>
 
     <div id="tableWrap" class="overflow-x-auto">
-      <table class="w-full min-w-[30rem] border-collapse tabular-nums">
+      <table class="w-full min-w-[30rem] table-fixed border-collapse tabular-nums">
         <thead>
           <tr class="bg-head text-white [&>th]:border [&>th]:border-head [&>th]:px-3 [&>th]:py-2 [&>th]:font-semibold">
-            <th class="w-12">고정</th>
+            <th class="w-16 whitespace-nowrap">고정</th>
             <th>배점</th>
             <th>문항 수</th>
             <th>배점계</th>
@@ -552,14 +552,19 @@ function render() {
 
   const tb = $('tbody');
   tb.replaceChildren();
-  for (const r of s.rows) {
-    const tr = el('tr', '[&>td]:border [&>td]:border-rule [&>td]:px-3 [&>td]:py-1.5 [&>td]:text-center' + (r.locked ? ' bg-warn-bg/50' : ''));
+  // 문항 수를 0으로 고정한 배점도 제자리에 회색 줄로 남겨, 그 줄에서 다시 고치거나 풀 수 있게 한다
+  const zeros = state.locks.filter(([, c]) => c === 0)
+    .map(([v]) => ({ value: v, count: 0, subtotal: 0, gap: null, tier: '', locked: true, zero: true }));
+  const shown = s.rows.concat(zeros).sort((a, b) => b.value - a.value);
+  for (const r of shown) {
+    const tr = el('tr', '[&>td]:border [&>td]:border-rule [&>td]:px-3 [&>td]:py-1.5 [&>td]:text-center'
+      + (r.zero ? ' bg-wash text-muted' : r.locked ? ' bg-warn-bg/50' : ''));
     const lt = el('td', '!px-1');
     const lb = el('button', 'inline-grid place-items-center w-8 h-8 rounded ' + (r.locked ? 'text-warn-fg hover:bg-warn-bg' : 'text-rule-strong hover:text-ink hover:bg-wash'));
     lb.type = 'button';
     lb.innerHTML = r.locked ? LOCK_ICON.on : LOCK_ICON.off;
     lb.setAttribute('aria-pressed', r.locked);
-    lb.title = r.locked ? `${fmt(r.value, step)}점 고정 해제` : `${fmt(r.value, step)}점 ${r.count}문항으로 고정하고 나머지를 다시 계산`;
+    lb.title = r.zero ? `${fmt(r.value, step)}점 다시 쓰기` : r.locked ? `${fmt(r.value, step)}점 고정 해제` : `${fmt(r.value, step)}점 ${r.count}문항으로 고정하고 나머지를 다시 계산`;
     lb.setAttribute('aria-label', lb.title);
     lb.addEventListener('click', () => setLock(r.value, r.locked ? null : r.count));
     lt.append(lb);
@@ -571,6 +576,7 @@ function render() {
       el('td', '', fmt(r.subtotal, step)),
       el('td', r.gap != null && r.gap > step + 1e-9 ? 'text-warn-fg font-semibold' : 'text-muted', r.gap == null ? '' : fmt(r.gap, step)),
       tier);
+    if (r.zero) tier.append(el('span', 'text-sm', '안 씀'));
     tb.append(tr);
   }
   const ft = el('tr', 'bg-head-soft font-semibold [&>td]:border [&>td]:border-rule [&>td]:px-3 [&>td]:py-2 [&>td]:text-center');
