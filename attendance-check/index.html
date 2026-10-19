@@ -17,7 +17,7 @@
   </header>
 
   <!-- 입력 -->
-  <section class="grid gap-4 md:grid-cols-2">
+  <section id="inputSec" class="grid gap-4 md:grid-cols-2">
     <label id="pdfDrop" class="block bg-white rounded-xl border-2 border-dashed border-slate-300 p-5 cursor-pointer hover:border-blue-400 focus-within:ring-2 focus-within:ring-blue-300">
       <span class="block text-lg font-semibold">① 신고서 PDF</span>
       <span class="block text-base text-slate-600 mt-1">리로스쿨 <b>알림신청 → 결석신고서/체험학습 → 인쇄 →</b> [인쇄 대상을 선택하세요.]에서 <b>[신청서]만 체크 → PDF로 저장</b></span>
@@ -37,6 +37,13 @@
       <input id="xlsxInput" type="file" accept=".xlsx,.xls" class="sr-only">
     </label>
   </section>
+  <!-- 대조 후에는 입력 칸 대신 한 줄 요약 -->
+  <div id="fileBar" class="hidden flex flex-wrap items-center gap-x-4 gap-y-1 bg-white rounded-xl border border-slate-200 px-4 py-3 text-base">
+    <span>① <b id="barPdf"></b></span>
+    <span>② <b id="barXlsx"></b></span>
+    <button id="reselect" type="button" class="text-blue-600 hover:underline">파일 재선택</button>
+    <span class="text-slate-500">이 화면에 파일을 드래그해도 교체됩니다</span>
+  </div>
 
   <details class="bg-white rounded-xl border border-slate-200 p-4">
     <summary class="text-base font-semibold cursor-pointer">휴업일 설정 (신고 기간의 수업일 산정 시 제외)</summary>
@@ -619,8 +626,18 @@ async function run(pdfBuf, xlsxBuf) {
   renderTable();
   $('resultSec').classList.remove('hidden');
   $('exportBtn').disabled = false;
+  showInputs(false);
   return { neis: neis.length, pdf: records.length, pages: doc.numPages, errors: errors.length, counts: countBy(results) };
 }
+
+// 대조 후에는 입력 칸을 접고 파일명 1행만 표시
+function showInputs(show) {
+  $('barPdf').textContent = state.pdfFile ? state.pdfFile.name : '';
+  $('barXlsx').textContent = state.xlsxFile ? state.xlsxFile.name : '';
+  $('inputSec').classList.toggle('hidden', !show);
+  $('fileBar').classList.toggle('hidden', show);
+}
+$('reselect').onclick = () => showInputs(true);
 
 function countBy(results) {
   const c = {}; for (const k in STATUS) c[k] = 0;
@@ -628,31 +645,38 @@ function countBy(results) {
   return c;
 }
 
+const ALL = { label: '전체', badge: 'bg-slate-100 text-slate-800', desc: '학생·일자별 대조 결과 전체' };
+const defOf = k => k === 'all' ? ALL : STATUS[k] || FLAGS[k];
+
+// 필터 칩: 묶음별 1행. 설명은 칩의 title과, 선택된 필터에 한해 하단 1행으로 표시
 function renderCards() {
   const c = countBy(state.results), box = $('cards');
   box.replaceChildren();
-  const card = (k, label, badge, count, desc) => {
+  const chip = k => {
+    const d = defOf(k);
+    const count = k === 'all' ? state.results.length : STATUS[k] ? c[k] : state.results.filter(d.test).length;
     const active = k === 'all' ? !state.filter : state.filter === k;
-    const b = el('button', 'text-left bg-white rounded-xl border p-4 hover:border-blue-400 ' + (active ? 'border-blue-500 ring-2 ring-blue-200' : 'border-slate-200'));
-    b.append(el('span', 'inline-block rounded px-2 text-base ' + badge, label),
-             el('div', 'text-3xl font-bold mt-1', String(count)),
-             el('div', 'text-base text-slate-500 mt-1 leading-snug break-keep', desc));
-    b.onclick = () => setFilter(k === 'all' || state.filter === k ? null : k);
+    const b = el('button', 'inline-flex items-center gap-2 rounded-full border bg-white pl-1 pr-3 py-1 text-base hover:border-blue-400 ' +
+      (active ? 'border-blue-500 ring-2 ring-blue-200' : 'border-slate-200'));
+    b.type = 'button';
+    b.title = d.desc;
+    b.setAttribute('aria-pressed', active);
+    b.append(el('span', 'rounded-full px-2 ' + d.badge, d.label), el('span', 'font-bold', String(count)));
+    b.onclick = () => setFilter(k === 'all' ? null : k);
     return b;
   };
-  CARD_GROUPS.forEach((g, i) => {
-    const sec = el('div', i ? 'border-t-2 border-slate-300 pt-4' : '');
-    const head = el('div', 'flex flex-wrap items-baseline gap-x-3 mb-2');
-    head.append(el('h2', 'text-lg font-bold', g.title), el('span', 'text-base text-slate-500', g.hint));
-    const grid = el('div', 'grid gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-4');
-    for (const k of g.keys) {
-      if (k === 'all') grid.append(card('all', '전체', 'bg-slate-100 text-slate-800', state.results.length, '학생·일자별 대조 결과 전체'));
-      else if (STATUS[k]) grid.append(card(k, STATUS[k].label, STATUS[k].badge, c[k], STATUS[k].desc));
-      else grid.append(card(k, FLAGS[k].label, FLAGS[k].badge, state.results.filter(FLAGS[k].test).length, FLAGS[k].desc));
-    }
-    sec.append(head, grid);
-    box.append(sec);
-  });
+  const groups = el('div', 'bg-white rounded-xl border border-slate-200 p-3 space-y-2');
+  for (const g of CARD_GROUPS) {
+    const row = el('div', 'flex flex-col gap-1 sm:flex-row sm:items-start sm:gap-3');
+    const head = el('span', 'sm:w-40 shrink-0 sm:pt-1.5 text-base font-semibold text-slate-600', g.title);
+    head.title = g.hint;
+    const chips = el('div', 'flex flex-wrap gap-2');
+    chips.append(...g.keys.map(chip));
+    row.append(head, chips);
+    groups.append(row);
+  }
+  groups.append(el('p', 'text-base text-slate-500 border-t border-slate-100 pt-2 break-keep', defOf(state.filter || 'all').desc));
+  box.append(groups);
 }
 const matchFilter = (r, k) => STATUS[k] ? r.status === k : FLAGS[k].test(r);
 
@@ -676,7 +700,7 @@ function renderTable() {
   const rows = state.results.filter(r =>
     (!state.filter || matchFilter(r, state.filter)) &&
     (!q || String(r.num) === q || r.name.includes(q)));
-  $('filterLabel').textContent = (state.filter ? (STATUS[state.filter] || FLAGS[state.filter]).label + ' · ' : '') + `${rows.length}건`;
+  $('filterLabel').textContent = (state.filter ? defOf(state.filter).label + ' · ' : '') + `${rows.length}건`;
   $('clearFilter').classList.toggle('hidden', !state.filter);
   const tb = $('tbody');
   tb.replaceChildren();
