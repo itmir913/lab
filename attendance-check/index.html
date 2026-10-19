@@ -175,6 +175,8 @@ tailwind.config = {
 <script>
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 const PDFJS_OPTS = {
+  // CVE-2024-4367: 조작된 PDF의 글꼴로 임의 코드가 실행되는 취약점 차단 (3.x에는 수정판이 없음)
+  isEvalSupported: false,
   cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
   cMapPacked: true,
   standardFontDataUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/standard_fonts/',
