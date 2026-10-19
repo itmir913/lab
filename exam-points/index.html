@@ -93,8 +93,9 @@ tailwind.config = {
       </table>
     </div>
 
-    <details id="advanced" class="mt-2 text-sm">
-      <summary class="cursor-pointer text-muted hover:text-ink">세부 조건</summary>
+    <div class="mt-2 flex flex-wrap items-start gap-3">
+      <details id="advanced" class="flex-1 min-w-0 text-sm">
+      <summary class="cursor-pointer py-1 text-muted hover:text-ink">세부 조건</summary>
       <div class="mt-2 grid gap-3 rounded border border-rule p-3 sm:grid-cols-2">
         <label class="space-y-1">
           <span class="flex items-center gap-2">배점 범위
@@ -126,7 +127,10 @@ tailwind.config = {
           <input id="exclude" type="text" placeholder="예: 4.0, 5" class="field">
         </label>
       </div>
-    </details>
+      </details>
+      <span id="staleMsg" class="hidden py-1.5 text-sm text-warn-fg">조건이 바뀌었습니다</span>
+      <button id="runBtn" type="button" class="rounded bg-head px-5 py-1.5 font-semibold text-white hover:bg-ink">계산</button>
+    </div>
   </section>
 
   <div id="errorBox" class="hidden rounded border border-rule border-l-4 border-l-seal p-3" role="alert"></div>
@@ -257,11 +261,32 @@ function checkInputs(o) {
   return null;
 }
 
-let timer = null;
+// 입력 중에는 계산하지 않는다 - 조건을 다 넣고 [계산]이나 Enter를 누를 때만 계산한다.
+// 그 사이에는 지난 결과를 흐리게 두어 아직 반영되지 않았음을 보여 준다
 function schedule() {
-  clearTimeout(timer);
-  timer = setTimeout(run, 150);
+  $('staleMsg').classList.remove('hidden');
+  $('resultSec').classList.add('opacity-40');
+  writeUrl();
 }
+function calculate() {
+  const btn = $('runBtn');
+  btn.disabled = true;
+  btn.textContent = '계산 중…';
+  // 버튼 글자가 먼저 그려지도록 한 박자 늦게 계산한다
+  setTimeout(() => {
+    try {
+      run();
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '계산';
+      $('staleMsg').classList.add('hidden');
+      $('resultSec').classList.remove('opacity-40');
+    }
+  }, 20);
+}
+$('runBtn').addEventListener('click', calculate);
+document.querySelectorAll('section[aria-label="조건"] input').forEach(i =>
+  i.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); calculate(); } }));
 
 for (const id of ['total', 'count']) $(id).addEventListener('input', () => { fillAuto(); schedule(); });
 $('step').addEventListener('change', () => { fillAuto(); schedule(); });
@@ -280,7 +305,7 @@ function setLock(value, count) {
   if (count != null) state.locks.push([value, count]);
   state.locks.sort((a, b) => b[0] - a[0]);
   renderLocks();
-  schedule();
+  calculate();
 }
 
 function renderLocks() {
@@ -300,7 +325,7 @@ function renderLocks() {
   }
   const clear = el('button', 'underline underline-offset-2 text-muted hover:text-seal', '모두 해제');
   clear.type = 'button';
-  clear.addEventListener('click', () => { state.locks = []; renderLocks(); schedule(); });
+  clear.addEventListener('click', () => { state.locks = []; renderLocks(); calculate(); });
   bar.append(clear);
 }
 
@@ -598,7 +623,7 @@ async function loadPrecalc() {
 
 readUrl();
 fillAuto();
-loadPrecalc().finally(run);
+loadPrecalc().finally(calculate);
 </script>
 </body>
 </html>
