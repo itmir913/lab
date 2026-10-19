@@ -1,0 +1,549 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>배점 생성기</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+// 출결 대조와 같은 흰 바탕 + 볼펜 잉크·괘선 색
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        wash: '#F4F5F7', sheet: '#FFFFFF', ink: '#1D2B3A', 'ink-soft': '#2C3E52', muted: '#5E6B73',
+        rule: '#CDD6D1', 'rule-strong': '#8FA39A', seal: '#C2352B',
+        hi:   { fg: '#A3271F', bg: '#F7E1DE' },
+        mid:  { fg: '#34488A', bg: '#E5E9F6' },
+        lo:   { fg: '#2E6A4F', bg: '#E2EFE7' },
+        warn: { fg: '#8A5300', bg: '#F8ECD3' },
+      },
+      fontFamily: {
+        sans: ['"Pretendard Variable"', 'Pretendard', 'system-ui', 'sans-serif'],
+      },
+      fontSize: {
+        title: ['2rem', { lineHeight: '1.25', letterSpacing: '-0.02em' }],
+      },
+    },
+  },
+};
+</script>
+<style>
+  body { word-break: keep-all; overflow-wrap: break-word; }
+  :focus-visible { outline: 2px solid #1D2B3A; outline-offset: 2px; }
+  .field { width: 100%; border: 1px solid #CDD6D1; border-radius: .375rem; padding: .375rem .625rem; background: #fff; font-variant-numeric: tabular-nums; }
+  .field:focus { border-color: #1D2B3A; outline: none; }
+  .field.is-auto { background: #F4F5F7; }
+  input[type=number]::-webkit-inner-spin-button { opacity: 1; }
+</style>
+<script src="./solver.js"></script>
+</head>
+<body class="bg-white text-ink font-sans text-base antialiased min-h-screen">
+<main class="max-w-screen-xl mx-auto px-4 py-8 space-y-6">
+
+  <header class="max-w-3xl space-y-2">
+    <h1 class="text-title font-bold">배점 생성기</h1>
+    <p class="text-muted leading-relaxed">지필평가의 총점·문항 수·난이도별 문항 수를 넣으면 문항별 배점을 자동으로 나눕니다. 배점 종류가 많을수록 서로 다른 문항을 틀린 학생끼리 같은 점수가 나오는 일이 줄어들므로, 정해진 범위 안에서 배점 종류를 최대한 늘리고 한 배점에 문항이 몰리지 않게 합니다.</p>
+  </header>
+
+  <!-- 입력 -->
+  <section class="rounded-lg border border-rule bg-sheet p-4 sm:p-5 space-y-5" aria-label="조건">
+    <div class="grid gap-4 sm:grid-cols-3">
+      <label class="space-y-1">
+        <span class="block font-semibold">총점</span>
+        <input id="total" type="number" min="1" step="any" value="100" class="field">
+      </label>
+      <label class="space-y-1">
+        <span class="block font-semibold">문항 수</span>
+        <input id="count" type="number" min="1" max="200" step="1" value="23" class="field">
+      </label>
+      <label class="space-y-1">
+        <span class="block font-semibold">배점 간격</span>
+        <select id="step" class="field">
+          <option value="0.05">0.05점</option>
+          <option value="0.1" selected>0.1점</option>
+          <option value="0.2">0.2점</option>
+          <option value="0.25">0.25점</option>
+          <option value="0.5">0.5점</option>
+          <option value="1">1점</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="grid gap-4 md:grid-cols-2">
+      <fieldset class="space-y-1">
+        <legend class="font-semibold flex items-center gap-2">배점 범위
+          <button id="rangeAuto" type="button" class="hidden text-sm font-normal underline underline-offset-2 text-muted hover:text-seal">자동으로 되돌리기</button>
+        </legend>
+        <div class="flex items-center gap-2">
+          <input id="min" type="number" step="any" aria-label="최소 배점" class="field">
+          <span class="text-muted">~</span>
+          <input id="max" type="number" step="any" aria-label="최대 배점" class="field">
+          <span class="shrink-0">점</span>
+        </div>
+        <p id="rangeHint" class="text-sm text-muted"></p>
+      </fieldset>
+
+      <fieldset class="space-y-1">
+        <legend class="font-semibold flex items-center gap-2">난이도별 문항 수
+          <button id="tiersAuto" type="button" class="hidden text-sm font-normal underline underline-offset-2 text-muted hover:text-seal">자동으로 되돌리기</button>
+        </legend>
+        <div class="grid grid-cols-3 gap-2">
+          <label class="flex items-center gap-2"><span class="shrink-0 rounded px-1.5 text-sm font-semibold bg-hi-bg text-hi-fg">상</span><input id="tierHi" type="number" min="0" step="1" class="field" aria-label="상 문항 수"></label>
+          <label class="flex items-center gap-2"><span class="shrink-0 rounded px-1.5 text-sm font-semibold bg-mid-bg text-mid-fg">중</span><input id="tierMid" type="number" min="0" step="1" class="field" aria-label="중 문항 수"></label>
+          <label class="flex items-center gap-2"><span class="shrink-0 rounded px-1.5 text-sm font-semibold bg-lo-bg text-lo-fg">하</span><input id="tierLo" type="number" min="0" step="1" class="field" aria-label="하 문항 수"></label>
+        </div>
+        <p id="tierHint" class="text-sm text-muted"></p>
+      </fieldset>
+    </div>
+
+    <details id="advanced" class="border-t border-dashed border-rule pt-4">
+      <summary class="cursor-pointer font-semibold">세부 조건</summary>
+      <div class="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <label class="space-y-1">
+          <span class="block">배점 종류 수</span>
+          <input id="kinds" type="number" min="0" step="1" placeholder="최대한 많이" class="field">
+          <span class="block text-sm text-muted">비우면 범위 안에서 최대한 많이</span>
+        </label>
+        <label class="space-y-1">
+          <span class="block">한 배점당 최대 문항 수
+            <button id="maxPerAuto" type="button" class="hidden ml-1 text-sm underline underline-offset-2 text-muted hover:text-seal">자동</button>
+          </span>
+          <input id="maxPer" type="number" min="1" step="1" class="field">
+          <span class="block text-sm text-muted">같은 배점에 몰리는 문항 수 상한</span>
+        </label>
+        <label class="space-y-1">
+          <span class="block">배점 건너뛰기</span>
+          <select id="maxSkip" class="field">
+            <option value="0">허용 안 함 (연속)</option>
+            <option value="1" selected>1칸까지 (예: 4.1 → 3.9)</option>
+            <option value="2">2칸까지</option>
+          </select>
+          <span class="block text-sm text-muted">건너뛸수록 후순위로 밀립니다</span>
+        </label>
+        <label class="space-y-1">
+          <span class="block">제외할 배점</span>
+          <input id="exclude" type="text" placeholder="예: 4.0, 5" class="field">
+          <span class="block text-sm text-muted">쉼표로 구분, 건너뛴 칸으로 치지 않음</span>
+        </label>
+      </div>
+    </details>
+  </section>
+
+  <div id="errorBox" class="hidden rounded-lg border border-rule border-l-4 border-l-seal bg-sheet p-4" role="alert"></div>
+  <div id="relaxBox" class="hidden rounded-lg border border-rule border-l-4 border-l-warn-fg bg-warn-bg/40 p-4"></div>
+
+  <!-- 결과 -->
+  <section id="resultSec" class="hidden grid gap-4 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
+    <div class="space-y-2">
+      <div class="flex items-baseline justify-between gap-2">
+        <h2 class="text-lg font-semibold">후보</h2>
+        <span id="status" class="text-sm text-muted" aria-live="polite"></span>
+      </div>
+      <ol id="cands" class="space-y-2"></ol>
+    </div>
+
+    <div class="min-w-0 space-y-4">
+      <div id="stats" class="grid gap-2 grid-cols-2 xl:grid-cols-4"></div>
+
+      <div class="rounded-lg border border-rule bg-sheet">
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2.5 border-b border-rule">
+          <h2 id="detailTitle" class="text-lg font-semibold"></h2>
+          <span class="ml-auto flex items-center gap-3">
+            <span id="copyMsg" class="text-sm text-muted" aria-live="polite"></span>
+            <button id="copyBtn" type="button" class="rounded-md border-2 border-ink px-3 py-1 font-semibold hover:bg-ink hover:text-white">표 복사</button>
+          </span>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full tabular-nums">
+            <thead class="bg-wash text-muted">
+              <tr class="[&>th]:border-b-[3px] [&>th]:border-double [&>th]:border-rule-strong [&>th]:px-3 [&>th]:py-2 [&>th]:font-semibold [&>th]:whitespace-nowrap">
+                <th class="text-right">배점</th>
+                <th class="text-left">문항 수</th>
+                <th class="text-right">배점계</th>
+                <th class="text-right">급간</th>
+                <th class="text-center">곤란도</th>
+                <th class="text-right">순번</th>
+              </tr>
+            </thead>
+            <tbody id="tbody"></tbody>
+            <tfoot id="tfoot" class="font-semibold"></tfoot>
+          </table>
+        </div>
+      </div>
+      <p id="tierLine" class="text-sm text-muted"></p>
+    </div>
+  </section>
+
+  <!-- 미리 계산한 추천표 -->
+  <details id="catalog" class="rounded-lg border border-rule bg-sheet px-4 py-3">
+    <summary class="cursor-pointer font-semibold">문항 수별 추천표 <span class="font-normal text-muted">(100점 만점 · 기본 조건으로 미리 계산)</span></summary>
+    <div class="mt-3 space-y-3">
+      <div class="flex flex-wrap items-center gap-2" role="group" aria-label="배점 간격">
+        <span class="text-muted">배점 간격</span>
+        <button type="button" data-step="0.1" class="catStep rounded-md border px-3 py-1">0.1점</button>
+        <button type="button" data-step="0.5" class="catStep rounded-md border px-3 py-1">0.5점</button>
+        <span class="text-sm text-muted">행을 누르면 그 설정으로 불러옵니다.</span>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full tabular-nums text-sm sm:text-base">
+          <thead class="bg-wash text-muted">
+            <tr class="text-left [&>th]:border-b [&>th]:border-rule-strong [&>th]:px-3 [&>th]:py-2 [&>th]:font-semibold [&>th]:whitespace-nowrap">
+              <th>문항 수</th><th>배점 범위</th><th>배점 종류</th><th>최다 동일 배점</th><th>상·중·하</th><th class="min-w-60">1안 배점 분포</th>
+            </tr>
+          </thead>
+          <tbody id="catBody"></tbody>
+        </table>
+      </div>
+      <p id="catNote" class="text-sm text-muted"></p>
+    </div>
+  </details>
+</main>
+
+<script>
+const X = window.ExamPoints;
+const $ = id => document.getElementById(id);
+const TIER_CLS = { 상: 'bg-hi-bg text-hi-fg', 중: 'bg-mid-bg text-mid-fg', 하: 'bg-lo-bg text-lo-fg' };
+const BAR_CLS = { 상: 'bg-hi-fg', 중: 'bg-mid-fg', 하: 'bg-lo-fg' };
+
+const state = {
+  // 직접 고치기 전까지는 총점·문항 수·간격에 맞춰 자동으로 채운다
+  auto: { range: true, tiers: true, maxPer: true },
+  result: null,
+  selected: 0,
+  precalc: null,          // key → 항목
+  catStep: 0.1,
+};
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+const num = id => $(id).value.trim() === '' ? NaN : Number($(id).value);
+const fmt = (x, step) => (+x).toFixed(X.decimalsOf(step));
+
+/* ───────────── 입력 ───────────── */
+function base() {
+  return { total: num('total'), count: num('count'), step: Number($('step').value) };
+}
+
+// 자동 칸을 기본값으로 다시 채운다
+function fillAuto() {
+  const b = base();
+  if (!(b.total > 0) || !Number.isInteger(b.count) || b.count < 1) return;
+  const d = X.defaultsFor(b.total, b.count, b.step);
+  if (state.auto.range) { $('min').value = d.min; $('max').value = d.max; }
+  if (state.auto.tiers) { $('tierHi').value = d.tiers[0]; $('tierMid').value = d.tiers[1]; $('tierLo').value = d.tiers[2]; }
+  if (state.auto.maxPer) $('maxPer').value = d.maxPer;
+  paintAuto();
+}
+
+function paintAuto() {
+  const b = base();
+  const mean = b.total / b.count;
+  for (const id of ['min', 'max']) $(id).classList.toggle('is-auto', state.auto.range);
+  for (const id of ['tierHi', 'tierMid', 'tierLo']) $(id).classList.toggle('is-auto', state.auto.tiers);
+  $('maxPer').classList.toggle('is-auto', state.auto.maxPer);
+  $('rangeAuto').classList.toggle('hidden', state.auto.range);
+  $('tiersAuto').classList.toggle('hidden', state.auto.tiers);
+  $('maxPerAuto').classList.toggle('hidden', state.auto.maxPer);
+  $('rangeHint').textContent = isFinite(mean)
+    ? `평균 ${+mean.toFixed(3)}점` + (state.auto.range ? ' · 자동: 평균 ±12.5%' : '')
+    : '';
+  const sum = ['tierHi', 'tierMid', 'tierLo'].reduce((a, id) => a + (num(id) || 0), 0);
+  const ok = sum === b.count;
+  $('tierHint').textContent = `합계 ${sum} / ${isFinite(b.count) ? b.count : '-'}문항` + (state.auto.tiers ? ' · 자동: 상 20%·중 50%·하 30%' : '');
+  $('tierHint').classList.toggle('text-seal', !ok);
+  $('tierHint').classList.toggle('text-muted', ok);
+}
+
+function readOptions() {
+  const b = base();
+  const exclude = $('exclude').value.split(/[,\s]+/).filter(Boolean).map(Number).filter(x => isFinite(x));
+  return {
+    ...b,
+    min: num('min'), max: num('max'),
+    tiers: [num('tierHi'), num('tierMid'), num('tierLo')],
+    kinds: num('kinds') || 0,
+    maxPer: num('maxPer'),
+    maxSkip: Number($('maxSkip').value),
+    exclude,
+  };
+}
+
+function checkInputs(o) {
+  if (!(o.total > 0)) return '총점을 입력하세요.';
+  if (!Number.isInteger(o.count) || o.count < 1) return '문항 수를 1 이상의 정수로 입력하세요.';
+  if (!isFinite(o.min) || !isFinite(o.max)) return '배점 범위를 입력하세요.';
+  if (o.tiers.some(x => !Number.isInteger(x) || x < 0)) return '난이도별 문항 수를 0 이상의 정수로 입력하세요.';
+  if (!Number.isInteger(o.maxPer) || o.maxPer < 1) return '한 배점당 최대 문항 수를 1 이상의 정수로 입력하세요.';
+  return null;
+}
+
+let timer = null;
+function schedule() {
+  clearTimeout(timer);
+  timer = setTimeout(run, 150);
+}
+
+for (const id of ['total', 'count']) $(id).addEventListener('input', () => { fillAuto(); schedule(); });
+$('step').addEventListener('change', () => { fillAuto(); schedule(); });
+for (const id of ['min', 'max']) $(id).addEventListener('input', () => { state.auto.range = false; paintAuto(); schedule(); });
+for (const id of ['tierHi', 'tierMid', 'tierLo']) $(id).addEventListener('input', () => { state.auto.tiers = false; paintAuto(); schedule(); });
+$('maxPer').addEventListener('input', () => { state.auto.maxPer = false; paintAuto(); schedule(); });
+for (const id of ['kinds', 'exclude']) $(id).addEventListener('input', schedule);
+$('maxSkip').addEventListener('change', schedule);
+$('rangeAuto').addEventListener('click', () => { state.auto.range = true; fillAuto(); schedule(); });
+$('tiersAuto').addEventListener('click', () => { state.auto.tiers = true; fillAuto(); schedule(); });
+$('maxPerAuto').addEventListener('click', () => { state.auto.maxPer = true; fillAuto(); schedule(); });
+
+/* ───────────── 계산 ───────────── */
+function run() {
+  const o = readOptions();
+  const bad = checkInputs(o);
+  if (bad) return showError(bad);
+
+  let res;
+  const hit = state.precalc && state.precalc.get(X.keyOf(o));
+  if (hit) {
+    res = { solutions: X.expand(hit.solved, hit.solutions), relaxed: hit.relaxed, options: hit.solved, complete: true, precalc: true };
+  } else {
+    const t0 = performance.now();
+    res = X.solveAuto(o, { limit: 10 });
+    res.ms = Math.round(performance.now() - t0);
+  }
+  if (res.error) return showError(res.error);
+
+  state.result = res;
+  state.selected = 0;
+  $('errorBox').classList.add('hidden');
+  renderRelaxed(res);
+  $('status').textContent = `${res.solutions.length}개 · ` + (res.precalc ? '미리 계산됨' : `${res.ms}ms 탐색`)
+    + (res.complete ? '' : ' (탐색 한도 도달)');
+  $('resultSec').classList.remove('hidden');
+  renderCands();
+  renderDetail();
+}
+
+function showError(msg) {
+  state.result = null;
+  $('errorBox').textContent = msg;
+  $('errorBox').classList.remove('hidden');
+  $('relaxBox').classList.add('hidden');
+  $('resultSec').classList.add('hidden');
+}
+
+function renderRelaxed(res) {
+  const box = $('relaxBox');
+  box.replaceChildren();
+  if (!res.relaxed || !res.relaxed.length) { box.classList.add('hidden'); return; }
+  box.append(el('p', 'font-semibold', '입력한 조건으로는 배점을 나눌 수 없어 조건을 완화했습니다.'));
+  const ul = el('ul', 'mt-1 list-disc pl-5');
+  res.relaxed.forEach(t => ul.append(el('li', '', t)));
+  box.append(ul);
+  const apply = el('button', 'mt-2 font-semibold underline underline-offset-2 hover:text-seal', '완화한 조건을 입력란에 반영');
+  apply.type = 'button';
+  apply.addEventListener('click', () => {
+    const o = res.options;
+    state.auto.range = false;
+    state.auto.maxPer = false;
+    $('min').value = o.min; $('max').value = o.max; $('maxPer').value = o.maxPer;
+    paintAuto();
+    run();
+  });
+  box.append(apply);
+  box.classList.remove('hidden');
+}
+
+/* ───────────── 결과 ───────────── */
+// 배점별 문항 수를 작은 막대로
+function miniBars(sol, height = 28) {
+  const wrap = el('div', 'flex items-end gap-px');
+  wrap.style.height = height + 'px';
+  wrap.setAttribute('aria-hidden', 'true');
+  for (const r of sol.rows) {
+    const b = el('span', 'flex-1 rounded-t-sm ' + BAR_CLS[r.tier]);
+    b.style.height = Math.max(3, (r.count / sol.maxCount) * height) + 'px';
+    b.title = `${r.value}점 × ${r.count}`;
+    wrap.append(b);
+  }
+  return wrap;
+}
+
+function renderCands() {
+  const ol = $('cands');
+  ol.replaceChildren();
+  state.result.solutions.forEach((s, i) => {
+    const li = el('li');
+    const btn = el('button', 'w-full text-left rounded-lg border px-3 py-2.5 space-y-2 transition-colors '
+      + (i === state.selected ? 'border-ink bg-wash' : 'border-rule bg-sheet hover:border-ink'));
+    btn.type = 'button';
+    btn.setAttribute('aria-pressed', i === state.selected);
+    const head = el('div', 'flex items-baseline justify-between gap-2');
+    head.append(el('span', 'font-semibold', `${s.rank}안`));
+    head.append(el('span', 'text-sm text-muted tabular-nums', `${s.max}~${s.min}점`));
+    btn.append(head);
+    btn.append(el('div', 'text-sm tabular-nums', `배점 ${s.kinds}가지 · 최다 ${s.maxCount}문항` + (s.skipped ? ` · 건너뜀 ${s.skipped}` : '')));
+    btn.append(miniBars(s));
+    btn.addEventListener('click', () => { state.selected = i; renderCands(); renderDetail(); });
+    li.append(btn);
+    ol.append(li);
+  });
+}
+
+function stat(label, value, sub) {
+  const box = el('div', 'rounded-lg border border-rule bg-sheet px-3 py-2');
+  box.append(el('div', 'text-sm text-muted', label));
+  box.append(el('div', 'text-2xl font-bold tabular-nums', value));
+  if (sub) box.append(el('div', 'text-sm text-muted', sub));
+  return box;
+}
+
+function renderDetail() {
+  const s = state.result.solutions[state.selected];
+  const step = state.result.options.step;
+  const pairs = s.count * (s.count - 1) / 2;
+
+  $('stats').replaceChildren(
+    stat('배점 종류', `${s.kinds}가지`, `${s.max}~${s.min}점`),
+    stat('최다 동일 배점', `${s.maxCount}문항`, '같은 배점을 받는 문항 수 최댓값'),
+    stat('1문항 오답 시 점수', `${s.oneMiss}가지`, `틀린 문항 ${s.count}개 경우 중`),
+    stat('2문항 오답 시 점수', `${s.twoMiss}가지`, `틀린 문항 ${pairs}쌍 경우 중`),
+  );
+
+  $('detailTitle').textContent = `${s.rank}안 배점표`;
+  const tb = $('tbody');
+  tb.replaceChildren();
+  for (const r of s.rows) {
+    const tr = el('tr', 'border-b border-rule last:border-0 [&>td]:px-3 [&>td]:py-1.5');
+    tr.append(el('td', 'text-right font-semibold', fmt(r.value, step)));
+    const c = el('td');
+    const cw = el('div', 'flex items-center gap-2');
+    cw.append(el('span', 'w-5 text-right', r.count));
+    const bar = el('span', 'h-2 rounded-sm ' + BAR_CLS[r.tier]);
+    bar.style.width = (r.count / s.maxCount) * 4 + 'rem';
+    bar.setAttribute('aria-hidden', 'true');
+    cw.append(bar);
+    c.append(cw);
+    tr.append(c);
+    tr.append(el('td', 'text-right', fmt(r.subtotal, step)));
+    tr.append(el('td', 'text-right ' + (r.gap != null && r.gap > step + 1e-9 ? 'text-warn-fg font-semibold' : 'text-muted'), r.gap == null ? '' : fmt(r.gap, step)));
+    const t = el('td', 'text-center');
+    t.append(el('span', 'rounded px-1.5 text-sm font-semibold ' + TIER_CLS[r.tier], r.tier));
+    tr.append(t);
+    tr.append(el('td', 'text-right text-muted text-sm', r.from === r.to ? `${r.from}` : `${r.from}–${r.to}`));
+    tb.append(tr);
+  }
+  const ft = el('tr', 'bg-wash [&>td]:px-3 [&>td]:py-2 border-t-[3px] border-double border-rule-strong');
+  ft.append(el('td', 'text-right', '합계'));
+  ft.append(el('td', '', `${s.count}문항`));
+  ft.append(el('td', 'text-right', fmt(s.total, step)));
+  ft.append(el('td'), el('td'), el('td'));
+  $('tfoot').replaceChildren(ft);
+
+  $('tierLine').textContent = s.tierStats
+    .filter(t => t.count)
+    .map(t => `${t.name} ${t.count}문항 ${fmt(t.points, step)}점 (배점 ${t.kinds}가지)`)
+    .join(' · ') + ' · 순번은 어려운 문항부터 센 순서입니다.';
+  $('copyMsg').textContent = '';
+}
+
+// 엑셀에 바로 붙여 넣을 수 있게 탭으로 구분한다
+function toTsv(s, step) {
+  const lines = [['문항배점', '문항수', '배점계', '급간', '곤란도'].join('\t'),
+                 ['', s.count, fmt(s.total, step), '', ''].join('\t')];
+  for (const r of s.rows) {
+    lines.push([fmt(r.value, step), r.count, fmt(r.subtotal, step), r.gap == null ? '' : fmt(r.gap, step), r.tier].join('\t'));
+  }
+  return lines.join('\n');
+}
+
+$('copyBtn').addEventListener('click', async () => {
+  const s = state.result.solutions[state.selected];
+  const text = toTsv(s, state.result.options.step);
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (e) {
+    const ta = el('textarea');
+    ta.value = text;
+    document.body.append(ta);
+    ta.select();
+    document.execCommand('copy');
+    ta.remove();
+  }
+  $('copyMsg').textContent = '복사했습니다. 엑셀에 붙여 넣으세요.';
+});
+
+/* ───────────── 미리 계산한 추천표 ───────────── */
+async function loadPrecalc() {
+  try {
+    const res = await fetch('./precalc.json', { cache: 'no-cache' });
+    if (!res.ok) throw new Error(res.status);
+    const list = await res.json();
+    state.precalc = new Map(list.map(e => [e.key, e]));
+  } catch (e) {
+    $('catNote').textContent = '미리 계산한 표를 불러오지 못했습니다. 입력란의 실시간 계산은 그대로 쓸 수 있습니다.';
+    return;
+  }
+  renderCatalog();
+}
+
+function renderCatalog() {
+  document.querySelectorAll('.catStep').forEach(b => {
+    const on = +b.dataset.step === state.catStep;
+    b.className = 'catStep rounded-md border px-3 py-1 ' + (on ? 'border-ink bg-ink text-white' : 'border-rule hover:border-ink');
+    b.setAttribute('aria-pressed', on);
+  });
+  const tb = $('catBody');
+  tb.replaceChildren();
+  for (const e of state.precalc.values()) {
+    if (e.step !== state.catStep) continue;
+    const s = X.expand(e.solved, e.solutions.slice(0, 1))[0];
+    const tr = el('tr', 'border-b border-rule cursor-pointer hover:bg-wash [&>td]:px-3 [&>td]:py-1.5');
+    tr.tabIndex = 0;
+    tr.append(el('td', 'font-semibold', `${e.count}문항`));
+    tr.append(el('td', '', `${s.min}~${s.max}점`));
+    tr.append(el('td', '', `${s.kinds}가지`));
+    tr.append(el('td', '', `${s.maxCount}문항`));
+    tr.append(el('td', '', e.solved.tiers.join('·')));
+    const bars = el('td');
+    const wrap = el('div', 'flex items-center gap-2');
+    const mb = miniBars(s, 18);
+    mb.classList.add('w-40');
+    wrap.append(mb);
+    if (e.relaxed.length) wrap.append(el('span', 'text-sm text-warn-fg', '조건 완화'));
+    bars.append(wrap);
+    tr.append(bars);
+    const load = () => {
+      $('total').value = e.total;
+      $('count').value = e.count;
+      $('step').value = String(e.step);
+      $('kinds').value = '';
+      $('exclude').value = '';
+      $('maxSkip').value = '1';
+      state.auto = { range: true, tiers: true, maxPer: true };
+      fillAuto();
+      run();
+      $('resultSec').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+    tr.addEventListener('click', load);
+    tr.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); load(); } });
+    tb.append(tr);
+  }
+  $('catNote').textContent = '기본 조건: 배점 범위 평균 ±12.5%, 상 20%·중 50%·하 30%, 한 배점당 최대 3문항(문항이 많으면 자동 증가), 건너뛰기 1칸. 조건을 바꾸면 실시간으로 다시 계산합니다.';
+}
+
+document.querySelectorAll('.catStep').forEach(b => b.addEventListener('click', () => {
+  state.catStep = +b.dataset.step;
+  renderCatalog();
+}));
+
+fillAuto();
+run();
+loadPrecalc().then(() => { if (state.result && !state.result.precalc) run(); });
+</script>
+</body>
+</html>
