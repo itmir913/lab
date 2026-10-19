@@ -73,7 +73,7 @@ const CASES = [
 ];
 
 const ORDERS = ['orig', 'len', 'lenDesc', 'abc', 'abcDesc', 'headLen', 'headLenDesc'];
-const MARKS = ['keep', 'circle', 'kor', 'num', 'paren', 'hangul', 'bullet', 'none'];
+const MARKS = ['keep', 'circle', 'circleK', 'kor', 'num', 'paren', 'latin', 'parenL', 'hangul', 'bullet', 'none'];
 const LAYOUTS = ['keep', '1', '2', '3', '4', '5'];
 const SEPS = ['keep', 'sp1', 'tab', 'tab2', 'sp2', 'sp4'];
 
@@ -223,6 +223,9 @@ for (const c of CASES) {
     num: ['1.', '2.', '3.', '4.', '5.'],
     paren: ['(1)', '(2)', '(3)', '(4)', '(5)'],
     hangul: ['(가)', '(나)', '(다)', '(라)', '(마)'],
+    circleK: ['㉠', '㉡', '㉢', '㉣', '㉤'],
+    latin: ['A.', 'B.', 'C.', 'D.', 'E.'],
+    parenL: ['(A)', '(B)', '(C)', '(D)', '(E)'],
     bullet: ['◦', '◦', '◦', '◦', '◦'],
     none: ['', '', '', '', ''],
   };

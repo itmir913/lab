@@ -72,6 +72,7 @@ function isSequence(kind, hits) {
 const CIRCLE = [...'①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳'];
 const JAMO   = [...'ㄱㄴㄷㄹㅁㅂㅅㅇㅈㅊㅋㅌㅍㅎ'];
 const GANADA = [...'가나다라마바사아자차카타파하'];
+const LATIN  = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'];
 
 /* 선지 사이를 띄우는 글자 */
 const SEP = { sp1: ' ', tab: '\t', tab2: '\t\t', sp2: '  ', sp4: '    ' };
@@ -83,6 +84,9 @@ function markerOf(style, i) {
     case 'num':    return (i + 1) + '.';
     case 'paren':  return '(' + (i + 1) + ')';
     case 'hangul': return '(' + (GANADA[i] || (i + 1)) + ')';
+    case 'circleK': return i < 14 ? String.fromCodePoint(0x3260 + i) : '(' + (i + 1) + ')';
+    case 'latin':  return (LATIN[i] || String(i + 1)) + '.';
+    case 'parenL': return '(' + (LATIN[i] || (i + 1)) + ')';
     case 'bullet': return '◦';
     case 'none':   return '';
   }
