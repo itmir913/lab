@@ -25,6 +25,7 @@ for (const step of STEPS) {
       total: TOTAL, step, count: n,
       solved: r.options,
       relaxed: r.relaxed || [],
+      found: r.found,
       // 각 해는 [배점(간격 단위 정수), 문항 수] 목록
       solutions: r.solutions.map(s => s.rows.map(row => [Math.round(row.value / step), row.count])),
     });
