@@ -49,7 +49,7 @@ tailwind.config = {
 
   <header class="space-y-1">
     <h1 class="text-2xl font-bold">선지 배열기</h1>
-    <p class="text-muted">지필평가 선지나 보기를 그대로 붙여 넣으면 유형을 알아서 가려내어 길이순이나 사전순으로 다시 늘어놓습니다. 번호와 탭 같은 구분자는 그대로 되살립니다.</p>
+    <p class="text-muted">지필평가 선지나 보기를 그대로 붙여 넣으면 유형을 알아서 가려내어 길이순이나 사전순으로 다시 늘어놓습니다. 번호와 배치는 그대로 되살리고, 선지 사이는 기본으로 탭을 넣습니다.</p>
   </header>
 
   <!-- 메뉴바: 배열 기준과 번호 모양 -->
@@ -97,18 +97,21 @@ tailwind.config = {
     <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
       <span class="font-semibold">구분자</span>
       <div id="sepBar" role="group" aria-label="선지 사이 구분자" class="flex flex-wrap overflow-hidden rounded border border-rule-strong">
-        <button type="button" class="seg" data-val="keep" aria-pressed="true">원본 구분자</button>
+        <button type="button" class="seg" data-val="keep" aria-pressed="false">원본 구분자</button>
         <button type="button" class="seg" data-val="sp1" aria-pressed="false">공백 1칸</button>
-        <button type="button" class="seg" data-val="tab" aria-pressed="false">탭</button>
+        <button type="button" class="seg" data-val="tab" aria-pressed="true">탭</button>
         <button type="button" class="seg" data-val="tab2" aria-pressed="false">탭 2칸</button>
         <button type="button" class="seg" data-val="sp2" aria-pressed="false">공백 2칸</button>
         <button type="button" class="seg" data-val="sp4" aria-pressed="false">공백 4칸</button>
       </div>
     </div>
 
-    <div class="flex flex-wrap items-center gap-x-5 gap-y-2 text-muted">
-      <label class="flex items-center gap-2"><input id="optTrim" type="checkbox" checked class="h-4 w-4 accent-head"> 선지 앞뒤 공백 다듬기</label>
-      <label class="flex items-center gap-2"><input id="optNoSpace" type="checkbox" class="h-4 w-4 accent-head"> 길이 셀 때 공백 빼기</label>
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+      <span class="font-semibold">옵션</span>
+      <div class="flex flex-wrap items-center gap-x-5 gap-y-2">
+        <label class="flex items-center gap-2"><input id="optTrim" type="checkbox" checked class="h-4 w-4 accent-head"> 선지 앞뒤 공백 다듬기</label>
+        <label class="flex items-center gap-2"><input id="optNoSpace" type="checkbox" class="h-4 w-4 accent-head"> 길이 셀 때 공백 빼기</label>
+      </div>
     </div>
   </section>
 
@@ -317,7 +320,7 @@ function arrange(items, order, noSpace) {
 }
 
 /* ───────────── 결과 만들기 ───────────── */
-const state = { order: 'len', mark: 'keep', layout: 'keep', sep: 'keep', outText: '', rowText: [] };
+const state = { order: 'len', mark: 'keep', layout: 'keep', sep: 'tab', outText: '', rowText: [] };
 
 function render() {
   const text = $('input').value;
