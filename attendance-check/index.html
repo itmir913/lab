@@ -13,7 +13,7 @@
 
   <header class="space-y-1">
     <h1 class="text-3xl font-bold">출결 대조</h1>
-    <p class="text-base text-slate-600">전자출결 신고서(PDF)와 NEIS 월별 출결 현황(엑셀)을 대조합니다. 모든 처리는 이 브라우저 안에서만 이루어지며 파일은 어디로도 전송·저장되지 않습니다.</p>
+    <p class="text-base text-slate-600">전자출결 신고서(PDF)와 NEIS 월별 출결 현황(엑셀)을 대조합니다. 모든 처리는 이 브라우저 내에서만 수행되며 파일은 외부로 전송·저장되지 않습니다.</p>
   </header>
 
   <!-- 입력 -->
@@ -21,26 +21,26 @@
     <label id="pdfDrop" class="block bg-white rounded-xl border-2 border-dashed border-slate-300 p-5 cursor-pointer hover:border-blue-400">
       <span class="block text-lg font-semibold">① 신고서 PDF</span>
       <span class="block text-base text-slate-600 mt-1">리로스쿨 <b>알림신청 → 결석신고서/체험학습 → 인쇄 →</b> [인쇄 대상을 선택하세요.]에서 <b>[신청서]만 체크 → PDF로 저장</b></span>
-      <span id="pdfName" class="block text-base text-slate-500 mt-1">파일을 선택하거나 여기로 끌어다 놓으세요</span>
+      <span id="pdfName" class="block text-base text-slate-500 mt-1">파일을 선택하거나 이 영역에 드래그하세요</span>
       <input id="pdfInput" type="file" accept=".pdf" class="hidden">
     </label>
     <label id="xlsxDrop" class="block bg-white rounded-xl border-2 border-dashed border-slate-300 p-5 cursor-pointer hover:border-blue-400">
       <span class="block text-lg font-semibold">② NEIS 월별 출결 현황 엑셀</span>
       <span class="block text-base text-slate-600 mt-1">NEIS <b>학급담임 → 출결현황및통계 → 학급별출결현황 →</b> <b>[인정내역 포함] 체크 → [월별 출결현황] → [엑셀다운로드]</b> 버튼 클릭 → <b>[엑셀]</b> 확인</span>
-      <span id="xlsxName" class="block text-base text-slate-500 mt-1">파일을 선택하거나 여기로 끌어다 놓으세요</span>
+      <span id="xlsxName" class="block text-base text-slate-500 mt-1">파일을 선택하거나 이 영역에 드래그하세요</span>
       <input id="xlsxInput" type="file" accept=".xlsx,.xls" class="hidden">
     </label>
   </section>
 
   <details class="bg-white rounded-xl border border-slate-200 p-4">
-    <summary class="text-base font-semibold cursor-pointer">휴업일 설정 (신고 기간을 날짜별로 펼칠 때 제외)</summary>
-    <p class="text-base text-slate-600 mt-2">공휴일·재량휴업일을 YYYY-MM-DD, YYYYMMDD, YYMMDD 형식으로 한 줄에 하나씩 입력하세요. 쉼표로 구분해도 됩니다. 토·일요일은 자동 제외됩니다.</p>
+    <summary class="text-base font-semibold cursor-pointer">휴업일 설정 (신고 기간의 수업일 산정 시 제외)</summary>
+    <p class="text-base text-slate-600 mt-2">공휴일·재량휴업일을 YYYY-MM-DD, YYYYMMDD, YYMMDD 형식으로 1행에 1개씩 입력하세요. 쉼표(,)로 구분해도 됩니다. 토·일요일은 자동 제외됩니다.</p>
     <textarea id="holidays" rows="3" placeholder="2026-09-24&#10;20260925&#10;261009" class="mt-2 w-full rounded-lg border border-slate-300 p-2 text-base font-mono"></textarea>
   </details>
 
   <div class="flex flex-wrap items-center gap-3">
     <button id="runBtn" disabled class="px-5 py-2.5 rounded-lg bg-blue-600 text-white text-base font-semibold disabled:bg-slate-300 hover:bg-blue-700">대조 시작</button>
-    <button id="exportBtn" disabled class="px-5 py-2.5 rounded-lg bg-emerald-600 text-white text-base font-semibold disabled:bg-slate-300 hover:bg-emerald-700">결과 엑셀 내려받기</button>
+    <button id="exportBtn" disabled class="px-5 py-2.5 rounded-lg bg-emerald-600 text-white text-base font-semibold disabled:bg-slate-300 hover:bg-emerald-700">결과 엑셀 다운로드</button>
     <span id="status" class="text-base text-slate-600"></span>
   </div>
 
@@ -53,7 +53,7 @@
     <div class="grid gap-4 xl:grid-cols-3">
       <div class="xl:col-span-2 min-w-0 bg-white rounded-xl border border-slate-200 flex flex-col xl:h-[calc(100vh-2rem)]">
         <div class="flex flex-wrap items-center gap-3 p-3 border-b border-slate-200 shrink-0">
-          <input id="search" type="search" placeholder="번호·이름 검색" class="rounded-lg border border-slate-300 px-3 py-1.5 text-base w-48">
+          <input id="search" type="search" placeholder="번호·성명 검색" class="rounded-lg border border-slate-300 px-3 py-1.5 text-base w-48">
           <span id="filterLabel" class="text-base text-slate-600"></span>
           <button id="clearFilter" class="text-base text-blue-600 hover:underline hidden">필터 해제</button>
         </div>
@@ -63,8 +63,8 @@
               <tr class="text-left">
                 <th class="px-3 py-2 whitespace-nowrap">결과</th>
                 <th class="px-3 py-2 whitespace-nowrap">번호</th>
-                <th class="px-3 py-2 whitespace-nowrap">이름</th>
-                <th class="px-3 py-2 whitespace-nowrap">날짜</th>
+                <th class="px-3 py-2 whitespace-nowrap">성명</th>
+                <th class="px-3 py-2 whitespace-nowrap">일자</th>
                 <th class="px-3 py-2 whitespace-nowrap">신고서</th>
                 <th class="px-3 py-2 whitespace-nowrap">쪽</th>
                 <th class="px-1 py-2"></th>
@@ -84,7 +84,7 @@
         </div>
         <div class="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">
           <div id="detail" class="space-y-4">
-            <p class="text-base text-slate-500">왼쪽 표에서 행을 클릭하면 신고서 내용과 원본 쪽이 여기에 표시됩니다.</p>
+            <p class="text-base text-slate-500">좌측 표에서 행을 클릭하면 신고서 내용과 원본 쪽이 이 영역에 표시됩니다.</p>
           </div>
           <canvas id="pdfCanvas" class="hidden w-full h-auto rounded-lg border border-slate-200 shadow-sm"></canvas>
         </div>
@@ -311,7 +311,7 @@ async function parsePdf(buf, onProgress) {
     const { tables } = await pageTables(page);
     const t1 = tables.find(t => hasLabel(t, '출결종류'));
     const t2 = tables.find(t => hasLabel(t, '승인기간'));
-    if (!t1) { errors.push({ page: p, why: '신청서 표를 찾지 못함' }); continue; }
+    if (!t1) { errors.push({ page: p, why: '신청서 표 미검출' }); continue; }
 
     const who = (t2 && cellRight(t2, '이름/학번')) || cellRight(t1, '이름/학번') || '';
     const m = /^(.*?)\s*\/\s*(\d{4,5})/.exec(who.replace(/\n/g, ' '));
@@ -389,31 +389,31 @@ const STATUS = {
   ok:     { label: '일치',           badge: 'bg-emerald-100 text-emerald-800', row: '',
             desc: 'PDF와 NEIS의 구분/교시/사유가 모두 일치함' },
   diff:   { label: '구분 불일치',    badge: 'bg-amber-100 text-amber-800',     row: 'bg-amber-50',
-            desc: '같은 날짜인데 출결 구분이 불일치함 (예: PDF 질병조퇴 ↔ NEIS 질병결석)' },
+            desc: '동일 일자의 출결 구분이 불일치함 (예: PDF 질병조퇴 ↔ NEIS 질병결석)' },
   slot:   { label: '교시 불일치',    badge: 'bg-orange-100 text-orange-800',   row: 'bg-orange-50',
-            desc: '출결 구분은 같지만 승인 교시 범위가 다름 (예: PDF 조회~종례 ↔ NEIS 1교시~종례)' },
+            desc: '출결 구분은 동일하나 승인 교시 범위가 상이함 (예: PDF 조회~종례 ↔ NEIS 1교시~종례)' },
   memo:   { label: '사유 불일치',    badge: 'bg-yellow-100 text-yellow-800',   row: 'bg-yellow-50',
-            desc: '구분·교시는 같지만 사유가 다름 (예: PDF 담임교사 확인 내용 ↔ NEIS 사유)' },
-  noPdf:  { label: '신고서 없음',    badge: 'bg-red-100 text-red-800',         row: 'bg-red-50',
-            desc: 'NEIS에는 출결이 있으나 PDF 신고서가 없음 (미인정·체험학습은 대조 제외로 분류)' },
+            desc: '구분·교시는 동일하나 사유가 상이함 (예: PDF 담임교사 확인 내용 ↔ NEIS 사유)' },
+  noPdf:  { label: '신고서 누락',    badge: 'bg-red-100 text-red-800',         row: 'bg-red-50',
+            desc: 'NEIS에 출결 기록이 있으나 PDF 신고서가 누락됨 (미인정·체험학습은 대조 제외로 분류)' },
   noNeis: { label: 'NEIS 미입력',    badge: 'bg-violet-100 text-violet-800',   row: 'bg-violet-50',
-            desc: 'PDF 신고서는 있으나 NEIS에 해당 날짜 출결이 없음 (엑셀에 없는 일자까지 포함)' },
+            desc: 'PDF 신고서는 존재하나 NEIS에 해당 일자 출결 기록이 미입력됨 (엑셀 범위 외 일자 포함)' },
   exempt: { label: '별도서류·미인정', badge: 'bg-slate-200 text-slate-700',     row: 'text-slate-500',
-            desc: '결석신고서 대상이 아님 (NEIS 미인정 출결, 체험학습)' },
+            desc: '결석신고서 제출 대상 외 (NEIS 미인정 출결, 체험학습)' },
 };
 const FLAGS = {
-  name: { label: '이름 다름', badge: 'bg-sky-100 text-sky-800', test: r => r.nameDiff,
-          desc: '번호·날짜는 같지만 이름이 다름 (예: PDF 김○○ ↔ NEIS 이○○)' },
+  name: { label: '성명 상이', badge: 'bg-sky-100 text-sky-800', test: r => r.nameDiff,
+          desc: '번호·일자는 동일하나 성명이 상이함 (예: PDF 김○○ ↔ NEIS 이○○)' },
   req:  { label: '신청≠승인 기간', badge: 'bg-pink-100 text-pink-800', test: r => r.reqDiff,
-          desc: 'PDF 안에서 학생 신청 기간과 교사 승인 기간이 다름 (예: 학생 신청 0교시~종례 → 교사 승인 1교시~종례)' },
+          desc: 'PDF 내 학생 신청 기간과 교사 승인 기간이 상이함 (예: 학생 신청 0교시~종례 → 교사 승인 1교시~종례)' },
   days: { label: '일수 오류', badge: 'bg-fuchsia-100 text-fuchsia-800', test: r => r.daysIssue,
-          desc: 'PDF에 적힌 일수가 실제 수업일수와 다름 (예: 3일간 ↔ 수업일 2일), 또는 기간 전체가 휴일' },
+          desc: 'PDF 기재 일수가 실제 수업일수와 상이함 (예: 3일간 ↔ 수업일 2일), 또는 기간 전체가 휴업일' },
 };
 // 카드 묶음: 대조 결과 / 신고서 내부 점검 / 대조 제외
 const CARD_GROUPS = [
-  { title: '신고서 ↔ NEIS 대조', hint: 'PDF와 NEIS 두 장부를 맞대어 본 결과', keys: ['all', 'ok', 'diff', 'slot', 'memo', 'noPdf', 'noNeis', 'name'] },
-  { title: '신고서 내부 점검', hint: 'PDF 한 장 안에서 맞지 않는 것 (대조 결과와 함께 표시됨)', keys: ['req', 'days'] },
-  { title: '대조 제외', hint: '신고서가 필요 없어 대조하지 않은 것', keys: ['exempt'] },
+  { title: '신고서 ↔ NEIS 대조', hint: 'PDF와 NEIS 두 장부를 대조해 본 결과', keys: ['all', 'ok', 'diff', 'slot', 'memo', 'noPdf', 'noNeis', 'name'] },
+  { title: '신고서 내부 점검', hint: 'PDF 신고서 자체의 오류 (대조 결과와 병기)', keys: ['req', 'days'] },
+  { title: '대조 제외', hint: '신고서 제출 대상이 아니므로 대조에서 제외한 항목', keys: ['exempt'] },
 ];
 const catLabel = (reason, kind) => (reason === '인정' ? '출석인정' : reason) + kind;
 
@@ -435,7 +435,7 @@ function compare(neis, pdfRecs, holidays) {
     const notes = [];
     const school = eachDay(rec.start, rec.end).filter(d => d.dow % 6 && !holidays.has(d.iso)).length;
     if (rec.statedDays != null && rec.statedDays !== school) notes.push(`신고서 ${rec.statedDays}일간 ≠ 수업일 ${school}일`);
-    if (!school) notes.push('기간 전체가 휴일');
+    if (!school) notes.push('기간 전체가 휴업일');
     recNotes.set(rec, notes);
   }
   // 날짜·교시처럼 숫자가 든 낱말은 빼고 비교 (담임 확인 내용에 날짜가 덧붙는 경우)
@@ -457,17 +457,17 @@ function compare(neis, pdfRecs, holidays) {
       else if (!same.some(p => !p.slotFrom || (p.slotFrom === sl[0] && p.slotTo === sl[sl.length - 1]))) status = 'slot';
       else if (!same.some(p => memoSame(p.confirm, n.memo))) status = 'memo';
       else status = 'ok';
-      if (ps.some(p => p.name !== n.name)) { notes.push('이름 다름'); nameDiff = true; }
+      if (ps.some(p => p.name !== n.name)) { notes.push('성명 상이'); nameDiff = true; }
     } else if (n) {
       if (n.reason === '미인정') { status = 'exempt'; notes.push('미인정'); }
       else if (/체험/.test(n.memo)) { status = 'exempt'; notes.push('체험학습'); }
       else status = 'noPdf';
     } else {
       status = 'noNeis';
-      if (!months.has(date.slice(0, 7))) notes.push('엑셀에 없는 달');
+      if (!months.has(date.slice(0, 7))) notes.push('엑셀 범위 외 월');
     }
-    if (ps.length > 1) notes.push(`신고서 ${ps.length}건 겹침`);
-    if (ps.some(p => !p.approved)) notes.push('승인 기간 없음(신청 기간 사용)');
+    if (ps.length > 1) notes.push(`신고서 ${ps.length}건 중복`);
+    if (ps.some(p => !p.approved)) notes.push('승인 기간 미기재(신청 기간 적용)');
     const reqs = ps.filter(p => p.reqDiffers);
     for (const p of reqs) notes.push(`신청 ${p.reqSig} → 승인 ${p.apSig}`);
     results.push({
@@ -504,7 +504,7 @@ function el(tag, cls, text) {
 
 function setFile(kind, file) {
   state[kind + 'File'] = file || null;
-  $(kind + 'Name').textContent = file ? file.name : '파일을 선택하거나 여기로 끌어다 놓으세요';
+  $(kind + 'Name').textContent = file ? file.name : '파일을 선택하거나 이 영역에 드래그하세요';
   updateRun();
 }
 $('pdfInput').addEventListener('change', e => setFile('pdf', e.target.files[0]));
@@ -540,7 +540,7 @@ window.addEventListener('drop', e => {
     const kind = fileKind(f);
     if (kind) setFile(kind, f); else skipped.push(f.name);
   }
-  $('status').textContent = skipped.length ? `PDF 또는 엑셀(.xlsx, .xls) 파일만 넣을 수 있습니다: ${skipped.join(', ')}` : '';
+  $('status').textContent = skipped.length ? `PDF 또는 엑셀(.xlsx, .xls) 파일만 등록 가능합니다: ${skipped.join(', ')}` : '';
 });
 
 $('runBtn').addEventListener('click', async () => {
@@ -553,9 +553,9 @@ $('runBtn').addEventListener('click', async () => {
 });
 
 async function run(pdfBuf, xlsxBuf) {
-  $('status').textContent = '엑셀 읽는 중…';
+  $('status').textContent = '엑셀 분석 중…';
   const neis = parseXlsx(xlsxBuf);
-  const { doc, records, errors } = await parsePdf(pdfBuf, (p, n) => { $('status').textContent = `PDF 읽는 중… ${p} / ${n}쪽`; });
+  const { doc, records, errors } = await parsePdf(pdfBuf, (p, n) => { $('status').textContent = `PDF 분석 중… ${p} / ${n}쪽`; });
   state.doc = doc;
   const holidays = parseHolidays($('holidays').value);
   const { results } = compare(neis, records, holidays);
@@ -594,7 +594,7 @@ function renderCards() {
     head.append(el('h2', 'text-lg font-bold', g.title), el('span', 'text-base text-slate-500', g.hint));
     const grid = el('div', 'grid gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-4');
     for (const k of g.keys) {
-      if (k === 'all') grid.append(card('all', '전체', 'bg-slate-100 text-slate-800', state.results.length, '학생·날짜별 대조 결과 전체'));
+      if (k === 'all') grid.append(card('all', '전체', 'bg-slate-100 text-slate-800', state.results.length, '학생·일자별 대조 결과 전체'));
       else if (STATUS[k]) grid.append(card(k, STATUS[k].label, STATUS[k].badge, c[k], STATUS[k].desc));
       else grid.append(card(k, FLAGS[k].label, FLAGS[k].badge, state.results.filter(FLAGS[k].test).length, FLAGS[k].desc));
     }
@@ -684,8 +684,8 @@ function showDetail(r) {
     w.append(h, g);
     cmp.append(w);
   };
-  if (r.nameDiff) row('이름', r.pdfName, r.name, true);
-  row('날짜', r.pdfPeriod, r.neis ? r.date : '');
+  if (r.nameDiff) row('성명', r.pdfName, r.name, true);
+  row('일자', r.pdfPeriod, r.neis ? r.date : '');
   row('구분', r.pdf, r.neis, r.status === 'diff');
   row('교시', r.pdfSlot, r.neisSlot, r.status === 'slot', '', r.neisPeriods.replace(/,/g, ', '));
   row('사유 · 신고서는 담임 확인 내용', r.pdfConfirm, r.neisMemo, r.status === 'memo');
@@ -707,7 +707,7 @@ function showDetail(r) {
   if (r.pages.length) { cv.classList.remove('hidden'); renderPage(r.pages[0]); }
   else {
     cancelRender();
-    $('pageLabel').textContent = '신고서 없음';
+    $('pageLabel').textContent = '신고서 누락';
     cv.classList.add('hidden');
     cv.getContext('2d').clearRect(0, 0, cv.width, cv.height);
   }
@@ -738,8 +738,8 @@ async function renderPage(n) {
 $('exportBtn').addEventListener('click', () => {
   const data = state.results.map(r => ({
     '결과': STATUS[r.status].label,
-    '추가 표시': Object.values(FLAGS).filter(f => f.test(r)).map(f => f.label).join(', '),
-    '번호': r.num, '이름': r.name, '날짜': r.date,
+    '추가 표기': Object.values(FLAGS).filter(f => f.test(r)).map(f => f.label).join(', '),
+    '번호': r.num, '성명': r.name, '일자': r.date,
     '신고서 구분': r.pdf, '신고서 기간': r.pdfPeriod, '신고서 교시': r.pdfSlot,
     '신고서 사유(학생)': r.pdfMemo, '신고서 확인 내용(담임)': r.pdfConfirm, 'PDF 쪽': r.pages.join(','),
     'NEIS 구분': r.neis, 'NEIS 교시': r.neisPeriods, 'NEIS 사유': r.neisMemo,
