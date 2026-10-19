@@ -18,16 +18,16 @@
 
   <!-- 입력 -->
   <section class="grid gap-4 md:grid-cols-2">
-    <label class="block bg-white rounded-xl border-2 border-dashed border-slate-300 p-5 cursor-pointer hover:border-blue-400">
+    <label id="pdfDrop" class="block bg-white rounded-xl border-2 border-dashed border-slate-300 p-5 cursor-pointer hover:border-blue-400">
       <span class="block text-lg font-semibold">① 신고서 PDF</span>
       <span class="block text-base text-slate-600 mt-1">리로스쿨 <b>알림신청 → 결석신고서/체험학습 → 인쇄 →</b> [인쇄 대상을 선택하세요.]에서 <b>[신청서]만 체크 → PDF로 저장</b></span>
-      <span id="pdfName" class="block text-base text-slate-500 mt-1">파일을 선택하세요</span>
+      <span id="pdfName" class="block text-base text-slate-500 mt-1">파일을 선택하거나 여기로 끌어다 놓으세요</span>
       <input id="pdfInput" type="file" accept=".pdf" class="hidden">
     </label>
-    <label class="block bg-white rounded-xl border-2 border-dashed border-slate-300 p-5 cursor-pointer hover:border-blue-400">
+    <label id="xlsxDrop" class="block bg-white rounded-xl border-2 border-dashed border-slate-300 p-5 cursor-pointer hover:border-blue-400">
       <span class="block text-lg font-semibold">② NEIS 월별 출결 현황 엑셀</span>
       <span class="block text-base text-slate-600 mt-1">NEIS <b>학급담임 → 출결현황및통계 → 학급별출결현황 →</b> <b>[인정내역 포함] 체크 → [월별 출결현황] → [엑셀다운로드]</b> 버튼 클릭 → <b>[엑셀]</b> 확인</span>
-      <span id="xlsxName" class="block text-base text-slate-500 mt-1">파일을 선택하세요</span>
+      <span id="xlsxName" class="block text-base text-slate-500 mt-1">파일을 선택하거나 여기로 끌어다 놓으세요</span>
       <input id="xlsxInput" type="file" accept=".xlsx,.xls" class="hidden">
     </label>
   </section>
@@ -502,9 +502,46 @@ function el(tag, cls, text) {
   return e;
 }
 
-$('pdfInput').addEventListener('change', e => { state.pdfFile = e.target.files[0] || null; $('pdfName').textContent = state.pdfFile ? state.pdfFile.name : '파일을 선택하세요'; updateRun(); });
-$('xlsxInput').addEventListener('change', e => { state.xlsxFile = e.target.files[0] || null; $('xlsxName').textContent = state.xlsxFile ? state.xlsxFile.name : '파일을 선택하세요'; updateRun(); });
+function setFile(kind, file) {
+  state[kind + 'File'] = file || null;
+  $(kind + 'Name').textContent = file ? file.name : '파일을 선택하거나 여기로 끌어다 놓으세요';
+  updateRun();
+}
+$('pdfInput').addEventListener('change', e => setFile('pdf', e.target.files[0]));
+$('xlsxInput').addEventListener('change', e => setFile('xlsx', e.target.files[0]));
 function updateRun() { $('runBtn').disabled = !(state.pdfFile && state.xlsxFile); }
+
+// 끌어다 놓기: 어느 칸에 놓든 확장자로 PDF·엑셀을 가려 넣음 (두 파일을 한 번에 놓아도 됨)
+const fileKind = f => /\.pdf$/i.test(f.name) ? 'pdf' : /\.xlsx?$/i.test(f.name) ? 'xlsx' : null;
+const dropZones = [$('pdfDrop'), $('xlsxDrop')];
+const hasFiles = e => [...(e.dataTransfer?.types || [])].includes('Files');
+const highlight = (z, on) => {
+  z.classList.toggle('border-slate-300', !on);
+  z.classList.toggle('border-blue-500', on);
+  z.classList.toggle('bg-blue-50', on);
+  z.classList.toggle('bg-white', !on);
+};
+for (const z of dropZones) {
+  z.addEventListener('dragover', e => { if (hasFiles(e)) highlight(z, true); });
+  z.addEventListener('dragleave', e => { if (!z.contains(e.relatedTarget)) highlight(z, false); });
+}
+// 칸 밖에 놓아도 브라우저가 파일을 열어 버리지 않도록 페이지 전체에서 받음
+window.addEventListener('dragover', e => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'copy';
+});
+window.addEventListener('drop', e => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  dropZones.forEach(z => highlight(z, false));
+  const skipped = [];
+  for (const f of e.dataTransfer.files) {
+    const kind = fileKind(f);
+    if (kind) setFile(kind, f); else skipped.push(f.name);
+  }
+  $('status').textContent = skipped.length ? `PDF 또는 엑셀(.xlsx, .xls) 파일만 넣을 수 있습니다: ${skipped.join(', ')}` : '';
+});
 
 $('runBtn').addEventListener('click', async () => {
   $('runBtn').disabled = true;
