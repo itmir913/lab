@@ -35,6 +35,16 @@ tailwind.config = {
   /* 엑셀 칸처럼 테두리 없는 입력 */
   .cell { width: 100%; text-align: center; padding: .5rem .25rem; background: transparent; font-variant-numeric: tabular-nums; font-size: 1.125rem; }
   .cell:focus { outline: 2px solid #2B4560; outline-offset: -2px; background: #fff; }
+  /* 숫자 칸의 위아래 화살표와 고르는 칸의 ∨ 표는 칸 안 오른쪽을 차지해, 가운데 정렬한 숫자를
+     그만큼 왼쪽으로 밀어 놓는다. 화살표를 지워 머리글과 정확히 같은 가운데에 오게 한다
+     (값은 그대로 입력하거나 키보드 ↑ ↓로 바꿀 수 있다) */
+  .cell::-webkit-outer-spin-button,
+  .cell::-webkit-inner-spin-button { -webkit-appearance: none; appearance: none; margin: 0; }
+  .cell[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+  /* 고르는 칸은 ∨ 표를 직접 그리고 좌우 여백을 같게 두어 가운데가 맞게 한다 */
+  select.cell { -webkit-appearance: none; appearance: none; padding-left: 1.5rem; padding-right: 1.5rem;
+                background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%235E6B73'%3E%3Cpath d='M5.5 7.5 10 12l4.5-4.5z'/%3E%3C/svg%3E");
+                background-repeat: no-repeat; background-position: right .4rem center; background-size: 1.1rem 1.1rem; }
   .field { width: 100%; border: 1px solid #CDD6D1; border-radius: .25rem; padding: .25rem .5rem; background: #fff; font-variant-numeric: tabular-nums; }
   .field:focus { border-color: #1D2B3A; outline: none; }
   .is-auto { color: #5E6B73; }
