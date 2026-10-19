@@ -98,6 +98,24 @@ tailwind.config = {
       </fieldset>
     </div>
 
+    <div class="border-t border-dashed border-rule pt-4 space-y-2" role="group" aria-labelledby="lockTitle">
+      <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span id="lockTitle" class="font-semibold">고정한 배점</span>
+        <span class="text-sm text-muted">배점표의 자물쇠를 누르거나 여기서 추가하면, 그 배점은 정한 문항 수만큼 반드시 쓰고 나머지만 다시 계산합니다.</span>
+      </div>
+      <div id="lockList" class="flex flex-wrap items-center gap-2"></div>
+      <p id="lockSum" class="hidden text-sm tabular-nums"></p>
+      <form id="lockForm" class="flex flex-wrap items-center gap-2">
+        <input id="lockValue" type="number" step="any" min="0" placeholder="배점" aria-label="고정할 배점" class="field !w-24">
+        <span>점 ×</span>
+        <input id="lockCount" type="number" step="1" min="1" placeholder="문항 수" aria-label="고정할 문항 수" class="field !w-24">
+        <span>문항</span>
+        <button type="submit" class="rounded-md border-2 border-ink px-3 py-1 font-semibold hover:bg-ink hover:text-white">고정 추가</button>
+        <button id="lockClear" type="button" class="hidden text-sm underline underline-offset-2 text-muted hover:text-seal">모두 해제</button>
+        <span id="lockMsg" class="text-sm text-seal" aria-live="polite"></span>
+      </form>
+    </div>
+
     <details id="advanced" class="border-t border-dashed border-rule pt-4">
       <summary class="cursor-pointer font-semibold">세부 조건</summary>
       <div class="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -129,6 +147,12 @@ tailwind.config = {
         </label>
       </div>
     </details>
+
+    <div class="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-dashed border-rule pt-4 text-sm text-muted">
+      <span>설정은 이 페이지 주소에 저장됩니다. 주소를 즐겨찾기하거나 보내면 같은 설정으로 열립니다.</span>
+      <button id="linkBtn" type="button" class="font-semibold text-ink underline underline-offset-2 hover:text-seal">링크 복사</button>
+      <span id="linkMsg" aria-live="polite"></span>
+    </div>
   </section>
 
   <div id="errorBox" class="hidden rounded-lg border border-rule border-l-4 border-l-seal bg-sheet p-4" role="alert"></div>
@@ -141,11 +165,29 @@ tailwind.config = {
         <h2 class="text-lg font-semibold">후보</h2>
         <span id="status" class="text-sm text-muted" aria-live="polite"></span>
       </div>
+      <p id="foundNote" class="text-sm text-muted"></p>
       <ol id="cands" class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-1"></ol>
+      <button id="moreBtn" type="button" class="hidden w-full rounded-md border-2 border-ink px-3 py-1.5 font-semibold hover:bg-ink hover:text-white">다음 10개 더 찾기</button>
     </div>
 
     <div class="min-w-0 space-y-4">
-      <div id="stats" class="grid gap-2 grid-cols-2 xl:grid-cols-4"></div>
+      <div class="grid gap-2 md:grid-cols-[minmax(0,12rem)_minmax(0,1fr)]">
+        <div id="stats" class="grid gap-2 grid-cols-2 md:grid-cols-1"></div>
+        <div class="rounded-lg border border-rule bg-sheet px-3 py-2 min-w-0">
+          <div class="text-sm text-muted">틀린 문항 수별 동점</div>
+          <div class="overflow-x-auto">
+            <table class="w-full tabular-nums text-sm sm:text-base">
+              <thead class="text-muted">
+                <tr class="[&>th]:border-b [&>th]:border-rule [&>th]:px-2 [&>th]:py-1 [&>th]:font-semibold [&>th]:whitespace-nowrap [&>th]:text-right">
+                  <th class="!text-left">틀린 문항</th><th>틀리는 경우</th><th>나오는 점수</th><th>한 점수에 최다</th><th>동점 확률</th>
+                </tr>
+              </thead>
+              <tbody id="missBody"></tbody>
+            </table>
+          </div>
+          <p class="mt-1 text-sm text-muted">같은 수의 문항을 틀린 두 학생이 같은 점수를 받을 확률입니다. 어느 문항이든 틀릴 가능성이 같다고 보고 셉니다.</p>
+        </div>
+      </div>
 
       <div class="rounded-lg border border-rule bg-sheet">
         <div class="flex flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2.5 border-b border-rule">
@@ -160,6 +202,7 @@ tailwind.config = {
           <table class="w-full tabular-nums">
             <thead class="bg-wash text-muted">
               <tr class="[&>th]:border-b-[3px] [&>th]:border-double [&>th]:border-rule-strong [&>th]:px-3 [&>th]:py-2 [&>th]:font-semibold [&>th]:whitespace-nowrap">
+                <th class="text-center !px-2">고정</th>
                 <th class="text-right">배점</th>
                 <th class="text-left">문항 수</th>
                 <th class="text-right">배점계</th>
@@ -215,6 +258,12 @@ const state = {
   selected: 0,
   precalc: null,          // key → 항목
   catStep: 0.1,
+  locks: [],              // [[배점, 문항 수], …]
+  limit: 10,              // 찾을 후보 수 ("더 찾기"로 10개씩 늘린다)
+};
+const LOCK_ICON = {
+  on: '<svg viewBox="0 0 20 20" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M6 8V6a4 4 0 1 1 8 0v2h1a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1h1Zm2 0h4V6a2 2 0 1 0-4 0v2Z"/></svg>',
+  off: '<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="4.8" y="8.8" width="10.4" height="8.4" rx=".8"/><path d="M7 8.8V6a3 3 0 0 1 5.8-1.1"/></svg>',
 };
 
 function el(tag, cls, text) {
@@ -272,6 +321,7 @@ function readOptions() {
     maxPer: num('maxPer'),
     maxSkip: Number($('maxSkip').value),
     exclude,
+    locks: state.locks.map(l => l.slice()),
   };
 }
 
@@ -284,14 +334,136 @@ function checkInputs(o) {
   return null;
 }
 
+// 조건이 바뀌면 후보 수와 선택을 처음으로 돌리고 다시 계산한다
 let timer = null;
 function schedule() {
   clearTimeout(timer);
+  state.limit = 10;
   timer = setTimeout(run, 150);
 }
 
+/* ───────────── 고정 ───────────── */
+const sameScore = (a, b) => Math.abs(a - b) < 1e-9;
+
+function setLock(value, count) {
+  state.locks = state.locks.filter(([v]) => !sameScore(v, value));
+  if (count != null) state.locks.push([value, count]);
+  state.locks.sort((a, b) => b[0] - a[0]);
+  renderLocks();
+  schedule();
+}
+
+function renderLocks() {
+  const list = $('lockList');
+  list.replaceChildren();
+  const step = Number($('step').value);
+  if (!state.locks.length) list.append(el('span', 'text-sm text-muted', '고정한 배점이 없습니다.'));
+  for (const [v, c] of state.locks) {
+    const chip = el('span', 'inline-flex items-center gap-1.5 rounded-md border border-warn-fg/40 bg-warn-bg px-2 py-0.5 tabular-nums');
+    const icon = el('span', 'text-warn-fg');
+    icon.innerHTML = LOCK_ICON.on;
+    chip.append(icon, el('span', 'font-semibold', `${fmt(v, step)}점 × ${c}문항`));
+    const x = el('button', 'ml-1 text-muted hover:text-seal', '✕');
+    x.type = 'button';
+    x.setAttribute('aria-label', `${fmt(v, step)}점 고정 해제`);
+    x.addEventListener('click', () => setLock(v, null));
+    chip.append(x);
+    list.append(chip);
+  }
+  $('lockClear').classList.toggle('hidden', !state.locks.length);
+  renderLockSum();
+}
+
+// 고정한 몫을 총점·문항 수·배점 종류 수에서 빼고 남은 것만 탐색한다는 것을 보여 준다
+function renderLockSum() {
+  const box = $('lockSum');
+  const locks = state.locks.filter(([, c]) => c > 0);
+  box.classList.toggle('hidden', !locks.length);
+  if (!locks.length) return;
+  const step = Number($('step').value);
+  const d = X.decimalsOf(step);
+  const n = locks.reduce((a, [, c]) => a + c, 0);
+  const pts = locks.reduce((a, [v, c]) => a + v * c, 0);
+  const total = num('total'), count = num('count'), kinds = num('kinds') || 0;
+  let text = `고정 ${n}문항 · ${pts.toFixed(d)}점 · 배점 ${locks.length}가지`;
+  if (total > 0 && Number.isInteger(count)) {
+    text += ` → 나머지 ${count - n}문항 · ${(total - pts).toFixed(d)}점`;
+    if (kinds) text += ` · 배점 ${kinds - locks.length}가지`;
+    if (count > n) text += ` (문항당 평균 ${+((total - pts) / (count - n)).toFixed(3)}점)`;
+    text += '을 고정한 배점 말고 다른 배점으로 채웁니다.';
+  }
+  box.textContent = text;
+}
+
+$('lockForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const v = num('lockValue'), c = num('lockCount');
+  if (!(v > 0)) { $('lockMsg').textContent = '배점을 입력하세요.'; return; }
+  if (!Number.isInteger(c) || c < 1) { $('lockMsg').textContent = '문항 수를 1 이상의 정수로 입력하세요.'; return; }
+  $('lockMsg').textContent = '';
+  $('lockValue').value = '';
+  $('lockCount').value = '';
+  setLock(v, c);
+});
+$('lockClear').addEventListener('click', () => { state.locks = []; renderLocks(); schedule(); });
+
+/* ───────────── 주소(URL)에 설정 저장 ───────────── */
+// 자동으로 채운 값은 주소에 쓰지 않는다 - 열 때 다시 자동으로 채운다
+function writeUrl() {
+  const p = [];
+  const put = (k, v) => p.push(k + '=' + encodeURIComponent(v).replace(/%2C/g, ','));
+  put('total', $('total').value);
+  put('n', $('count').value);
+  put('step', $('step').value);
+  if (!state.auto.range) { put('min', $('min').value); put('max', $('max').value); }
+  if (!state.auto.tiers) put('tiers', [$('tierHi').value, $('tierMid').value, $('tierLo').value].join('-'));
+  if (!state.auto.maxPer) put('maxPer', $('maxPer').value);
+  if ($('kinds').value.trim()) put('kinds', $('kinds').value.trim());
+  if ($('maxSkip').value !== '1') put('skip', $('maxSkip').value);
+  const ex = $('exclude').value.split(/[,\s]+/).filter(Boolean).join(',');
+  if (ex) put('exclude', ex);
+  if (state.locks.length) put('lock', state.locks.map(([v, c]) => `${v}x${c}`).join(','));
+  history.replaceState(null, '', location.pathname + '?' + p.join('&'));
+}
+
+function readUrl() {
+  const q = new URLSearchParams(location.search);
+  const has = k => q.has(k) && q.get(k).trim() !== '';
+  if (has('total')) $('total').value = q.get('total');
+  if (has('n')) $('count').value = q.get('n');
+  if (has('step') && [...$('step').options].some(o => o.value === q.get('step'))) $('step').value = q.get('step');
+  if (has('min') && has('max')) { $('min').value = q.get('min'); $('max').value = q.get('max'); state.auto.range = false; }
+  if (has('tiers')) {
+    const t = q.get('tiers').split('-');
+    if (t.length === 3) {
+      [$('tierHi').value, $('tierMid').value, $('tierLo').value] = t;
+      state.auto.tiers = false;
+    }
+  }
+  if (has('maxPer')) { $('maxPer').value = q.get('maxPer'); state.auto.maxPer = false; }
+  if (has('kinds')) $('kinds').value = q.get('kinds');
+  if (has('skip') && [...$('maxSkip').options].some(o => o.value === q.get('skip'))) $('maxSkip').value = q.get('skip');
+  if (has('exclude')) $('exclude').value = q.get('exclude').split(',').join(', ');
+  if (has('lock')) {
+    state.locks = q.get('lock').split(',')
+      .map(t => t.split('x').map(Number))
+      .filter(([v, c]) => v > 0 && Number.isInteger(c) && c >= 0)
+      .sort((a, b) => b[0] - a[0]);
+  }
+}
+
+$('linkBtn').addEventListener('click', async () => {
+  writeUrl();
+  try {
+    await navigator.clipboard.writeText(location.href);
+    $('linkMsg').textContent = '복사했습니다.';
+  } catch (e) {
+    $('linkMsg').textContent = '주소창의 주소를 복사하세요.';
+  }
+});
+
 for (const id of ['total', 'count']) $(id).addEventListener('input', () => { fillAuto(); schedule(); });
-$('step').addEventListener('change', () => { fillAuto(); schedule(); });
+$('step').addEventListener('change', () => { fillAuto(); renderLocks(); schedule(); });
 for (const id of ['min', 'max']) $(id).addEventListener('input', () => { state.auto.range = false; paintAuto(); schedule(); });
 for (const id of ['tierHi', 'tierMid', 'tierLo']) $(id).addEventListener('input', () => { state.auto.tiers = false; paintAuto(); schedule(); });
 $('maxPer').addEventListener('input', () => { state.auto.maxPer = false; paintAuto(); schedule(); });
@@ -302,32 +474,48 @@ $('tiersAuto').addEventListener('click', () => { state.auto.tiers = true; fillAu
 $('maxPerAuto').addEventListener('click', () => { state.auto.maxPer = true; fillAuto(); schedule(); });
 
 /* ───────────── 계산 ───────────── */
-function run() {
+// keep: "더 찾기"처럼 조건은 그대로이고 후보만 늘릴 때 선택한 후보를 유지한다
+function run({ keep = false } = {}) {
+  writeUrl();
+  renderLockSum();
   const o = readOptions();
   const bad = checkInputs(o);
   if (bad) return showError(bad);
 
   let res;
   const hit = state.precalc && state.precalc.get(X.keyOf(o));
-  if (hit) {
-    res = { solutions: X.expand(hit.solved, hit.solutions), relaxed: hit.relaxed, options: hit.solved, complete: true, precalc: true };
+  if (hit && hit.solutions.length >= state.limit) {
+    res = { solutions: X.expand(hit.solved, hit.solutions), relaxed: hit.relaxed, options: hit.solved,
+            found: hit.found, complete: true, precalc: true };
   } else {
     const t0 = performance.now();
-    res = X.solveAuto(o, { limit: 10 });
+    res = X.solveAuto(o, { limit: state.limit });
     res.ms = Math.round(performance.now() - t0);
   }
   if (res.error) return showError(res.error);
 
   state.result = res;
-  state.selected = 0;
+  if (!keep) state.selected = 0;
   $('errorBox').classList.add('hidden');
   renderRelaxed(res);
-  $('status').textContent = `${res.solutions.length}개 · ` + (res.precalc ? '미리 계산됨' : `${res.ms}ms 탐색`)
-    + (res.complete ? '' : ' (탐색 한도 도달)');
+  $('status').textContent = res.precalc ? '미리 계산됨' : `${res.ms}ms 탐색` + (res.complete ? '' : ' (탐색 한도 도달)');
+  $('foundNote').textContent = `조건을 만족하는 조합 ${countText(res.found)}가지 중 점수가 높은 ${res.solutions.length}개`;
+  $('moreBtn').classList.toggle('hidden', !(res.solutions.length < res.found && res.complete));
   $('resultSec').classList.remove('hidden');
   renderCands();
   renderDetail();
 }
+
+// 조합 수는 아주 커질 수 있어 1억 이상은 줄여 쓴다
+function countText(x) {
+  if (x < 1e8) return Math.round(x).toLocaleString('ko-KR');
+  return new Intl.NumberFormat('ko-KR', { notation: 'compact', maximumFractionDigits: 1 }).format(x);
+}
+
+$('moreBtn').addEventListener('click', () => {
+  state.limit += 10;
+  run({ keep: true });
+});
 
 function showError(msg) {
   state.result = null;
@@ -389,12 +577,16 @@ function renderCands() {
     head.append(el('span', 'text-sm text-muted tabular-nums', `${fmt(s.min, step)}~${fmt(s.max, step)}점`));
     btn.append(head);
     btn.append(el('div', 'text-sm tabular-nums', `배점 ${s.kinds}가지 · 최다 ${s.maxCount}문항` + (s.skipped ? ` · 건너뜀 ${s.skipped}` : '')));
+    const two = s.miss.find(m => m.wrong === 2);
+    if (two) btn.append(el('div', 'text-sm text-muted tabular-nums', `2문항 오답 동점 ${pct(two.tie)}`));
     btn.append(miniBars(s));
     btn.addEventListener('click', () => { state.selected = i; renderCands(); renderDetail(); });
     li.append(btn);
     ol.append(li);
   });
 }
+
+const pct = x => (x * 100).toFixed(x < 0.1 ? 1 : 0) + '%';
 
 function stat(label, value, sub) {
   const box = el('div', 'rounded-lg border border-rule bg-sheet px-3 py-2');
@@ -407,20 +599,36 @@ function stat(label, value, sub) {
 function renderDetail() {
   const s = state.result.solutions[state.selected];
   const step = state.result.options.step;
-  const pairs = s.count * (s.count - 1) / 2;
 
   $('stats').replaceChildren(
     stat('배점 종류', `${s.kinds}가지`, `${fmt(s.min, step)}~${fmt(s.max, step)}점`),
-    stat('최다 동일 배점', `${s.maxCount}문항`, '같은 배점을 받는 문항 수 최댓값'),
-    stat('1문항 오답 시 점수', `${s.oneMiss}가지`, `틀린 문항 ${s.count}개 경우 중`),
-    stat('2문항 오답 시 점수', `${s.twoMiss}가지`, `틀린 문항 ${pairs}쌍 경우 중`),
+    stat('최다 동일 배점', `${s.maxCount}문항`, '같은 배점인 문항 수 최댓값'),
   );
+  $('missBody').replaceChildren(...s.miss.map(m => {
+    const tr = el('tr', '[&>td]:px-2 [&>td]:py-1 [&>td]:text-right border-b border-rule last:border-0');
+    tr.append(el('td', '!text-left font-semibold', `${m.wrong}문항`),
+              el('td', '', `${countText(m.cases)}가지`),
+              el('td', '', `${m.scores}가지`),
+              el('td', '', `${countText(m.worst)}가지`),
+              el('td', 'font-semibold', pct(m.tie)));
+    return tr;
+  }));
 
   $('detailTitle').textContent = `${s.rank}안 배점표`;
   const tb = $('tbody');
   tb.replaceChildren();
   for (const r of s.rows) {
-    const tr = el('tr', 'border-b border-rule last:border-0 [&>td]:px-3 [&>td]:py-1.5');
+    const tr = el('tr', 'border-b border-rule last:border-0 [&>td]:px-3 [&>td]:py-1.5' + (r.locked ? ' bg-warn-bg/50' : ''));
+    const lt = el('td', 'text-center !px-2');
+    const lb = el('button', 'inline-grid place-items-center w-8 h-8 rounded-md ' + (r.locked ? 'text-warn-fg hover:bg-warn-bg' : 'text-rule-strong hover:text-ink hover:bg-wash'));
+    lb.type = 'button';
+    lb.innerHTML = r.locked ? LOCK_ICON.on : LOCK_ICON.off;
+    lb.setAttribute('aria-pressed', r.locked);
+    lb.setAttribute('aria-label', r.locked ? `${fmt(r.value, step)}점 고정 해제` : `${fmt(r.value, step)}점 ${r.count}문항으로 고정`);
+    lb.title = lb.getAttribute('aria-label');
+    lb.addEventListener('click', () => setLock(r.value, r.locked ? null : r.count));
+    lt.append(lb);
+    tr.append(lt);
     tr.append(el('td', 'text-right font-semibold', fmt(r.value, step)));
     const c = el('td');
     const cw = el('div', 'flex items-center gap-2');
@@ -440,6 +648,7 @@ function renderDetail() {
     tb.append(tr);
   }
   const ft = el('tr', 'bg-wash [&>td]:px-3 [&>td]:py-2 border-t-[3px] border-double border-rule-strong');
+  ft.append(el('td'));
   ft.append(el('td', 'text-right', '합계'));
   ft.append(el('td', '', `${s.count}문항`));
   ft.append(el('td', 'text-right', fmt(s.total, step)));
@@ -587,6 +796,9 @@ function renderCatalog() {
       $('exclude').value = '';
       $('maxSkip').value = '1';
       state.auto = { range: true, tiers: true, maxPer: true };
+      state.locks = [];
+      state.limit = 10;
+      renderLocks();
       fillAuto();
       run();
       $('resultSec').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -603,6 +815,8 @@ document.querySelectorAll('.catStep').forEach(b => b.addEventListener('click', (
   renderCatalog();
 }));
 
+readUrl();
+renderLocks();
 fillAuto();
 run();
 loadPrecalc().then(() => { if (state.result && !state.result.precalc) run(); });

@@ -14,8 +14,11 @@
  * 이 값을 상한으로 쓰는 깊이우선탐색(분기한정)으로 상위 N개 해를 빠짐없이 찾는다.
  * 같은 표에서 "남은 상태에서 가능한 해의 개수"도 함께 세어, 조건을 만족하는 조합이 모두 몇 가지인지 알려 준다.
  *
- * 고정(locks): "4.9점 1문항"처럼 배점과 문항 수를 못 박으면 그 배점은 반드시 그 수만큼 쓰고,
- * 나머지 문항과 점수만 탐색한다. 고정 배점이 범위 밖이면 범위에 끼워 넣되 건너뛴 칸으로 치지 않는다.
+ * 고정(locks): "4.9점 1문항"처럼 배점과 문항 수를 못 박는다. 고정한 몫(문항 수·점수·배점 종류)을
+ * 총점·문항 수·종류 수에서 빼고 남은 것을 나머지 배점으로 채우는 것과 같다. 다만 따로 풀지 않고
+ * 같은 표 안에서 고정 배점 칸은 그 수만 고르게 해 푼다 - 그래야 고정 배점이 난이도 경계를
+ * 가로지르는지, 이웃 배점과 몇 칸 떨어졌는지를 나머지와 함께 따질 수 있다.
+ * 고정 배점이 범위 밖이면 범위에 끼워 넣되 건너뛴 칸으로 치지 않는다.
  */
 (function (root) {
   'use strict';
@@ -162,21 +165,35 @@
     const t0 = Date.now();
     const P = prepare(opts);
     if (P.error) return P;
-    const { n, T, vals, tiers, maxPer, maxSkip, kinds, mean, forced, lockMsg } = P;
+    const { n, T, vals, tiers, maxPer, maxSkip, kinds, mean, forced, lockMsg, locked, rank } = P;
     const m = vals.length;
-    const base = vals[m - 1];
-    const E0 = T - n * base;               // 최저 배점을 넘는 몫의 합
+
+    // 고정한 몫을 먼저 뺀다: 남은 문항 nF개, 남은 점수 TF, 남은 종류 kF를 나머지 배점으로 채운다.
+    // 상태(r, e, q)는 이 "나머지"만 담으므로 고정할수록 표가 작아진다.
+    // 고정 배점 칸은 상태를 바꾸지 않고, 난이도 경계·건너뛴 칸을 따질 때 자리만 차지한다.
+    let lockN = 0, lockT = 0;
+    locked.forEach((c, u) => { lockN += c; lockT += u * c; });
+    const nF = n - lockN, TF = T - lockT;
+    const kF = kinds ? kinds - locked.size : 0;
+    const free = vals.filter((v, i) => !forced[i]);
+    const base = free.length ? free[free.length - 1] : 0;
+    const E0 = TF - nF * base;             // 나머지 배점이 최저 배점을 넘는 몫의 합
+    const infeasible = () => ({ infeasible: true, error: '조건을 모두 만족하는 배점이 없습니다.' + lockMsg + ' 배점 범위를 넓히거나, 한 배점당 최대 문항 수·건너뛰기 허용을 늘리거나, 난이도별 문항 수' + (lockMsg ? '·고정한 배점' : '') + '을 바꿔 보세요.' });
+    if (E0 < 0 || (nF > 0 && !free.length) || (kinds && (kF > nF || (nF > 0 && kF < 1)))) return infeasible();
     const d = vals.map(v => v - base);
     const S = maxSkip + 2;                 // 0 = 아직 시작 전, 1+s = 직전에 s칸 건너뜀
-    const KD = kinds ? kinds + 1 : 1;      // 종류 수를 고정할 때만 남은 종류 수를 상태로 둔다
-    const size = (m + 1) * (n + 1) * (E0 + 1) * S * KD;
+    const KD = kinds ? kF + 1 : 1;         // 종류 수를 고정할 때만 남은 종류 수를 상태로 둔다
+    const size = (m + 1) * (nF + 1) * (E0 + 1) * S * KD;
     if (size > MAX_STATES) return { error: '탐색 범위가 너무 넓습니다. 최소·최대 배점을 좁히거나 배점 간격을 늘리세요.' };
 
     const bounds = [tiers[0], tiers[0] + tiers[1]].filter(b => b > 0 && b < n);
     // 위에서부터 p번째 문항부터 c개를 같은 배점으로 묶을 때 난이도 경계를 가로지르는가
     const crosses = (p, c) => bounds.some(b => p < b && b < p + c);
+    // i번째 배점보다 높은 고정 배점의 문항 수 - 나머지 문항의 자리를 셀 때 더한다
+    const lockedBefore = [0];
+    vals.forEach((v, i) => lockedBefore.push(lockedBefore[i] + forced[i]));
+    const posOf = (i, r) => (nF - r) + lockedBefore[i];
     const unit = mean * AUTO_SPREAD;
-    const { rank } = P;
     const gain = (i, c, s) => {
       const z = (vals[i] - mean) / unit;
       const skip = rank[i] != null && s > 1 ? WEIGHT.skip * (s - 1) : 0;
@@ -184,51 +201,77 @@
     };
     // 배점을 고른 뒤의 s. 범위 밖 고정 배점은 건너뛴 칸 세기에 끼지 않으므로 s를 그대로 둔다
     const chosenTo = (i, s) => (rank[i] == null ? s : 1);
-
-    const R = n + 1, EE = E0 + 1;
-    const idx = (i, r, e, s, q) => ((((i * R + r) * EE + e) * S + s) * KD + q);
-    const f = new Float64Array(size).fill(-Infinity);
-    const cnt = new Float64Array(size);
-    // i번째 이후에 아직 쓰지 않은 고정 배점이 있는가 (있으면 거기서 끝낼 수 없다)
-    const lockAhead = vals.map((v, i) => forced.slice(i).some(Boolean)).concat(false);
-    // i번째 배점을 건너뛸 때 다음 상태의 s. 고정 배점이나 범위 밖 배점은 칸으로 세지 않는다
+    // i번째 배점을 건너뛸 때 다음 상태의 s. 범위 밖 배점은 칸으로 세지 않는다
     const skipTo = (i, s) => {
       if (s === 0) return 0;
       if (rank[i] == null) return s;
       return s <= maxSkip ? s + 1 : -1;
     };
-    // i번째 배점에 둘 수 있는 문항 수 [최소, 최대]. 고정 배점은 정확히 그 수
-    const span = (i, r) => (forced[i] ? [forced[i], Math.min(forced[i], r)] : [1, Math.min(maxPer, r)]);
+    // i번째 이후에 아직 지나지 않은 고정 배점이 있는가 (있으면 거기서 끝낼 수 없다)
+    const lockAhead = vals.map((v, i) => lockedBefore[m] > lockedBefore[i]).concat(false);
 
-    // f(i, r, e, s, q): i번째 배점부터 고려할 때, 남은 문항 r개·남은 몫 e로 얻을 수 있는 최대 점수
+    const R = nF + 1, EE = E0 + 1;
+    const idx = (i, r, e, s, q) => ((((i * R + r) * EE + e) * S + s) * KD + q);
+    const f = new Float64Array(size).fill(-Infinity);
+    const cnt = new Float64Array(size);
+
+    // 상태 (i, r, e, s, q)에서 갈 수 있는 다음 수: [고른 문항 수(0 = 건너뜀), 얻는 점수, 다음 상태 번호, 다음 r, e, s, q]
+    function moves(i, r, e, s, q) {
+      const out = [];
+      const p = posOf(i, r);
+      if (forced[i]) {
+        // 고정 배점: 나머지 상태는 그대로, 자리만 차지한다
+        if (!crosses(p, forced[i])) {
+          const ns = chosenTo(i, s);
+          out.push([forced[i], gain(i, forced[i], s), idx(i + 1, r, e, ns, q), r, e, ns, q]);
+        }
+        return out;
+      }
+      const ns = skipTo(i, s);
+      if (ns >= 0) out.push([0, 0, idx(i + 1, r, e, ns, q), r, e, ns, q]);
+      if (KD === 1 || q > 0) {
+        const nq = KD === 1 ? 0 : q - 1;
+        const cs = chosenTo(i, s);
+        for (let c = 1; c <= maxPer && c <= r; c++) {
+          if (c * d[i] > e || crosses(p, c)) break;
+          out.push([c, gain(i, c, s), idx(i + 1, r - c, e - c * d[i], cs, nq), r - c, e - c * d[i], cs, nq]);
+        }
+      }
+      return out;
+    }
+    const done = (i, r, e, q) => r === 0 && e === 0 && q === 0 && !lockAhead[i];
+
+    // f(i, r, e, s, q): i번째 배점부터 고려할 때, 나머지 문항 r개·나머지 몫 e로 얻을 수 있는 최대 점수
     // cnt(…): 같은 상태에서 끝까지 갈 수 있는 해의 개수
     for (let i = m; i >= 0; i--) {
-      for (let r = 0; r <= n; r++) {
+      for (let r = 0; r <= nF; r++) {
         for (let e = 0; e <= E0; e++) {
           for (let s = 0; s < S; s++) {
             for (let q = 0; q < KD; q++) {
               let best = -Infinity, ways = 0;
-              if (r === 0) {
-                // 남은 고정 배점이 있으면 끝낼 수 없다
-                if (e === 0 && q === 0 && !lockAhead[i]) { best = 0; ways = 1; }
+              if (done(i, r, e, q)) {
+                best = 0;
+                ways = 1;
               } else if (i < m) {
-                const ns = forced[i] ? -1 : skipTo(i, s);
-                if (ns >= 0) {
-                  const k = idx(i + 1, r, e, ns, q);
-                  best = f[k];
-                  ways = cnt[k];
-                }
-                if (KD === 1 || q > 0) {
-                  const p = n - r;
-                  const nq = KD === 1 ? 0 : q - 1;
-                  const [c0, c1] = span(i, r);
-                  for (let c = c0; c <= c1; c++) {
-                    if (c * d[i] > e || crosses(p, c)) break;
-                    const k = idx(i + 1, r - c, e - c * d[i], chosenTo(i, s), nq);
-                    if (f[k] === -Infinity) continue;
-                    const val = gain(i, c, s) + f[k];
-                    if (val > best) best = val;
-                    ways += cnt[k];
+                // moves()와 같은 규칙. 표를 채울 때는 배열을 만들지 않도록 풀어 쓴다
+                const p = posOf(i, r);
+                const take = (g, k) => {
+                  if (f[k] === -Infinity) return;
+                  if (g + f[k] > best) best = g + f[k];
+                  ways += cnt[k];
+                };
+                if (forced[i]) {
+                  if (!crosses(p, forced[i])) take(gain(i, forced[i], s), idx(i + 1, r, e, chosenTo(i, s), q));
+                } else {
+                  const ns = skipTo(i, s);
+                  if (ns >= 0) take(0, idx(i + 1, r, e, ns, q));
+                  if (KD === 1 || q > 0) {
+                    const nq = KD === 1 ? 0 : q - 1;
+                    const cs = chosenTo(i, s);
+                    for (let c = 1; c <= maxPer && c <= r; c++) {
+                      if (c * d[i] > e || crosses(p, c)) break;
+                      take(gain(i, c, s), idx(i + 1, r - c, e - c * d[i], cs, nq));
+                    }
                   }
                 }
               }
@@ -241,10 +284,9 @@
       }
     }
 
-    const start = idx(0, n, E0, 0, KD === 1 ? 0 : kinds);
-    if (f[start] === -Infinity) {
-      return { infeasible: true, error: '조건을 모두 만족하는 배점이 없습니다.' + lockMsg + ' 배점 범위를 넓히거나, 한 배점당 최대 문항 수·건너뛰기 허용을 늘리거나, 난이도별 문항 수' + (lockMsg ? '·고정한 배점' : '') + '을 바꿔 보세요.' };
-    }
+    const q0 = KD === 1 ? 0 : kF;
+    const start = idx(0, nF, E0, 0, q0);
+    if (f[start] === -Infinity) return infeasible();
 
     // 분기한정: 지금까지 얻은 점수 + f(남은 상태)가 상위 limit개의 마지막보다 낮으면 버린다
     const top = [];
@@ -261,36 +303,18 @@
     }
 
     function dfs(i, r, e, s, q, acc) {
-      if (r === 0) { if (cnt[idx(i, r, e, s, q)]) record(acc); return; }
+      if (done(i, r, e, q)) { record(acc); return; }
       if (i === m || cut) return;
       if (acc + f[idx(i, r, e, s, q)] <= floor() + 1e-9) return;
       if (++nodes > nodeBudget) { cut = true; return; }
-
-      const moves = [];
-      const ns = forced[i] ? -1 : skipTo(i, s);
-      if (ns >= 0) moves.push([0, f[idx(i + 1, r, e, ns, q)], 0, ns]);
-      if (KD === 1 || q > 0) {
-        const p = n - r;
-        const nq = KD === 1 ? 0 : q - 1;
-        const [c0, c1] = span(i, r);
-        for (let c = c0; c <= c1; c++) {
-          if (c * d[i] > e || crosses(p, c)) break;
-          const g = gain(i, c, s);
-          moves.push([c, g + f[idx(i + 1, r - c, e - c * d[i], chosenTo(i, s), nq)], g, chosenTo(i, s)]);
-        }
-      }
-      moves.sort((a, b) => b[1] - a[1]);
-      for (const [c, , g, ns2] of moves) {
-        if (c === 0) {
-          dfs(i + 1, r, e, ns2, q, acc);
-        } else {
-          picked.push({ unit: vals[i], count: c });
-          dfs(i + 1, r - c, e - c * d[i], ns2, KD === 1 ? 0 : q - 1, acc + g);
-          picked.pop();
-        }
+      const next = moves(i, r, e, s, q).sort((a, b) => (b[1] + f[b[2]]) - (a[1] + f[a[2]]));
+      for (const [c, g, , nr, ne, ns, nq] of next) {
+        if (c) picked.push({ unit: vals[i], count: c });
+        dfs(i + 1, nr, ne, ns, nq, acc + g);
+        if (c) picked.pop();
       }
     }
-    dfs(0, n, E0, 0, KD === 1 ? 0 : kinds, 0);
+    dfs(0, nF, E0, 0, q0, 0);
 
     return {
       solutions: top.map((t, k) => describe(P, t.groups, k + 1, t.score)),
