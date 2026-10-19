@@ -190,7 +190,7 @@
     // 종류 수별 표가 너무 크면 (배점 간격이 아주 촘촘할 때) 가장 좋은 종류 수 하나만 찾는다
     if (byKinds && (m + 1) * (nF + 1) * (E0 + 1) * S * KD > MAX_STATES) { byKinds = false; KD = 1; }
     const size = (m + 1) * (nF + 1) * (E0 + 1) * S * KD;
-    if (size > MAX_STATES) return { error: '탐색 범위가 너무 넓습니다. 최소·최대 배점을 좁히거나 배점 간격을 늘리세요.' };
+    if (size > MAX_STATES) return { tooBig: true, error: '탐색 범위가 너무 넓습니다. 최소·최대 배점을 좁히거나 배점 간격을 늘리세요.' };
 
     const bounds = [tiers[0], tiers[0] + tiers[1]].filter(b => b > 0 && b < n);
     // 위에서부터 p번째 문항부터 c개를 같은 배점으로 묶을 때 난이도 경계를 가로지르는가
@@ -376,7 +376,9 @@
         if (w === 0 && maxPer === opts.maxPer) continue;
         const o = { ...opts, min, max, maxPer };
         const r = solve(o, cfg);
-        if (r.error && !r.infeasible) return r;
+        if (r.error && !r.infeasible && !r.tooBig) return r;
+        // 넓히다가 표가 너무 커지면 이 방향은 그만두고 다음 완화로 넘어간다
+        if (r.tooBig) break;
         if (r.error) continue;
         r.relaxed = [];
         if (w) r.relaxed.push(`배점 범위를 ${min.toFixed(dec)}~${max.toFixed(dec)}점으로 넓혔습니다.`);
