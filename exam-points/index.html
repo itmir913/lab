@@ -688,7 +688,7 @@ function statTable(caption, head, rows, note) {
   return box;
 }
 
-// 난이도별 몫과, 몇 문항씩 틀린 두 학생이 같은 점수가 될 확률
+// 난이도별 문항 수와, 몇 문항씩 틀린 두 학생이 같은 점수가 될 확률
 function renderStats(s, step) {
   const badge = name => {
     const span = el('span', 'rounded px-2 py-0.5 font-semibold ' + TIER_CLS[name], name);
@@ -696,7 +696,7 @@ function renderStats(s, step) {
   };
   const tiers = s.tierStats.filter(t => t.count > 0).map(t =>
     [badge(t.name), `${t.count}문항`, `${fmt(t.points, step)}점`, `${t.kinds}가지`]);
-  const left = statTable('난이도별 몫', ['난이도', '문항 수', '점수', '배점 가지수'], tiers,
+  const left = statTable('난이도별 문항 수', ['난이도', '문항 수', '점수', '배점 가지수'], tiers,
     `배점 ${s.kinds}가지 · ${fmt(s.min, step)}~${fmt(s.max, step)}점 · 한 배점에 최다 ${s.maxCount}문항` +
     (s.skipped ? ` · 건너뛴 배점 ${s.skipped}칸` : ''));
 
