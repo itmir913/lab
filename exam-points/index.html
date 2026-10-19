@@ -42,7 +42,7 @@ tailwind.config = {
 <script src="./solver.js"></script>
 </head>
 <body class="bg-white text-ink font-sans text-base antialiased min-h-screen">
-<main class="max-w-3xl mx-auto px-4 py-8 space-y-5">
+<main class="max-w-5xl mx-auto px-4 py-8 space-y-5">
 
   <header class="space-y-1">
     <h1 class="text-2xl font-bold">배점 생성기</h1>
@@ -50,7 +50,7 @@ tailwind.config = {
   </header>
 
   <!-- 입력: 엑셀 머리글 한 줄 + 값 한 줄 -->
-  <section aria-label="조건">
+  <section aria-label="조건" class="print:hidden">
     <div class="overflow-x-auto">
       <table class="w-full min-w-[40rem] table-fixed border-collapse">
         <thead>
@@ -94,7 +94,7 @@ tailwind.config = {
     </div>
 
     <!-- 세부 조건은 계산 버튼 아래까지 전체 너비로 펼친다. 버튼은 접힌 제목 줄 오른쪽에 얹는다 -->
-    <div class="relative mt-2">
+    <div class="relative mt-2 print:hidden">
       <div class="absolute right-0 top-0 flex items-center gap-3">
         <span id="staleMsg" class="hidden text-sm text-warn-fg">조건이 바뀌었습니다</span>
         <button id="runBtn" type="button" class="rounded bg-head px-5 py-1.5 font-semibold text-white hover:bg-ink">계산</button>
@@ -142,7 +142,7 @@ tailwind.config = {
 
   <!-- 결과 -->
   <section id="resultSec" class="hidden space-y-2" aria-label="배점표">
-    <div id="navRow" class="flex flex-wrap items-center gap-2">
+    <div id="navRow" class="flex flex-wrap items-center gap-2 print:hidden">
       <div class="flex items-center rounded border border-rule-strong">
         <button id="prevBtn" type="button" aria-label="배점 가지수 줄이기" class="px-3 py-1.5 text-lg leading-none hover:bg-wash disabled:text-rule disabled:hover:bg-transparent">◀</button>
         <span id="pickLabel" class="min-w-[14rem] border-x border-rule px-3 py-1.5 text-center font-semibold tabular-nums" aria-live="polite"></span>
@@ -154,20 +154,20 @@ tailwind.config = {
         <span id="altLabel" class="min-w-[6.5rem] border-x border-rule px-3 py-1.5 text-center tabular-nums" aria-live="polite"></span>
         <button id="altNext" type="button" aria-label="같은 가지수의 다른 안" class="px-3 py-1.5 leading-none hover:bg-wash disabled:text-rule disabled:hover:bg-transparent">다른 안 ›</button>
       </div>
-      <span class="ml-auto flex flex-wrap items-center justify-end gap-2">
+      <span class="flex w-full flex-wrap items-center justify-end gap-2 sm:ml-auto sm:w-auto">
         <span id="copyMsg" class="text-sm text-muted" aria-live="polite"></span>
         <button id="copyBtn" type="button" class="rounded bg-head px-3 py-1.5 font-semibold text-white hover:bg-ink">표 복사</button>
         <button id="linkBtn" type="button" class="rounded border border-rule-strong px-3 py-1.5 hover:bg-wash">링크 복사</button>
       </span>
     </div>
 
-    <div id="lockBar" class="hidden flex flex-wrap items-center gap-2 text-sm"></div>
+    <div id="lockBar" class="hidden flex flex-wrap items-center gap-2 text-sm print:hidden"></div>
 
-    <div id="tableWrap" class="overflow-x-auto">
+    <div id="tableWrap" class="overflow-x-auto print:overflow-visible [&_table]:break-inside-avoid">
       <table class="w-full min-w-[30rem] table-fixed border-collapse tabular-nums">
         <thead>
-          <tr class="bg-head text-white [&>th]:border [&>th]:border-head [&>th]:px-3 [&>th]:py-2 [&>th]:font-semibold">
-            <th class="w-16 whitespace-nowrap">고정</th>
+          <tr class="bg-head text-white [&>th]:border [&>th]:border-head [&>th]:px-3 [&>th]:py-2 [&>th]:font-semibold [print-color-adjust:exact]">
+            <th class="w-16 whitespace-nowrap print:hidden">고정</th>
             <th>배점</th>
             <th>문항 수</th>
             <th>배점계</th>
@@ -179,7 +179,8 @@ tailwind.config = {
         <tfoot id="tfoot"></tfoot>
       </table>
     </div>
-    <p id="summary" class="text-sm text-muted"></p>
+    <div id="stats" class="grid gap-3 sm:grid-cols-2 [&>div]:break-inside-avoid"></div>
+    <p id="summary" class="text-sm text-muted print:hidden"></p>
   </section>
 </main>
 
@@ -479,7 +480,7 @@ async function run(stale = () => false) {
   state.view = want;
   $('errorBox').classList.add('hidden');
   $('resultSec').classList.remove('hidden');
-  for (const id of ['navRow', 'tableWrap', 'summary']) $(id).classList.remove('hidden');
+  for (const id of ['navRow', 'tableWrap', 'stats', 'summary']) $(id).classList.remove('hidden');
   render();
   // 주소에 "몇 번째 안"이 있으면 거기까지 찾아 간다
   if (state.pendingAlt) {
@@ -489,17 +490,42 @@ async function run(stale = () => false) {
   }
 }
 
+// 에러 줄에는 바로 누를 수 있는 해결책을 함께 놓는다 (세부 조건 열기, 자동으로 되돌리기, 고정 해제)
+function errorActions() {
+  const row = el('div', 'mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm');
+  const add = (text, fn) => {
+    const b = el('button', 'font-semibold underline underline-offset-2 text-blue-700 hover:text-blue-900', text);
+    b.type = 'button';
+    b.addEventListener('click', fn);
+    row.append(b);
+  };
+  if (!$('advanced').open) add('세부 조건 열기', () => { $('advanced').open = true; $('min').focus(); });
+  if (!state.auto.range || !state.auto.maxPer) {
+    add('배점 범위·최대 문항 수 자동으로 되돌리기', () => {
+      state.auto.range = true;
+      state.auto.maxPer = true;
+      fillAuto();
+      calculate();
+    });
+  }
+  if (Number($('kinds').value) > 0) add('배점 가지수 자동으로', () => { setKinds(0, null); calculate(); });
+  if (state.locks.length) add('고정 모두 해제', () => { state.locks = []; renderLocks(); calculate(); });
+  return row.children.length ? row : null;
+}
+
 function showError(msg) {
   state.result = null;
   writeUrl();
   renderLocks();
-  $('errorBox').textContent = msg;
+  $('errorBox').replaceChildren(el('p', '', msg));
+  const actions = errorActions();
+  if (actions) $('errorBox').append(actions);
   $('errorBox').classList.remove('hidden');
   $('relaxBox').classList.add('hidden');
   // 고정 때문에 해가 없을 수 있으니 고정 해제 줄은 남긴다
   $('resultSec').classList.toggle('hidden', !state.locks.length);
-  for (const id of ['navRow', 'tableWrap', 'summary']) $(id).classList.add('hidden');
-  for (const id of ['tbody', 'tfoot']) $(id).replaceChildren();
+  for (const id of ['navRow', 'tableWrap', 'stats', 'summary']) $(id).classList.add('hidden');
+  for (const id of ['tbody', 'tfoot', 'stats']) $(id).replaceChildren();
   $('pickLabel').textContent = '해 없음';
   $('prevBtn').disabled = $('nextBtn').disabled = true;
   $('summary').textContent = '';
@@ -559,7 +585,7 @@ function render() {
   for (const r of shown) {
     const tr = el('tr', '[&>td]:border [&>td]:border-rule [&>td]:px-3 [&>td]:py-1.5 [&>td]:text-center'
       + (r.zero ? ' bg-wash text-muted' : r.locked ? ' bg-warn-bg/50' : ''));
-    const lt = el('td', '!px-1');
+    const lt = el('td', '!px-1 print:hidden');
     const lb = el('button', 'inline-grid place-items-center w-8 h-8 rounded ' + (r.locked ? 'text-warn-fg hover:bg-warn-bg' : 'text-rule-strong hover:text-ink hover:bg-wash'));
     lb.type = 'button';
     lb.innerHTML = r.locked ? LOCK_ICON.on : LOCK_ICON.off;
@@ -580,36 +606,89 @@ function render() {
     tb.append(tr);
   }
   const ft = el('tr', 'bg-head-soft font-semibold [&>td]:border [&>td]:border-rule [&>td]:px-3 [&>td]:py-2 [&>td]:text-center');
-  ft.append(el('td'), el('td', '', '합계'), el('td', '', s.count), el('td', '', fmt(s.total, step)), el('td'), el('td'));
+  ft.append(el('td', 'print:hidden'), el('td', '', '합계'), el('td', '', s.count), el('td', '', fmt(s.total, step)), el('td'), el('td'));
   $('tfoot').replaceChildren(ft);
 
-  const two = s.miss.find(m => m.wrong === 2);
   // 가지수 하나만 계산한 경우 (배점 간격이 아주 촘촘할 때)
   if (e.onlyBest) $('pickLabel').textContent = `배점 ${e.kinds}가지 (최적)`;
-  $('summary').textContent = `배점 ${s.kinds}가지 · 한 배점에 최다 ${s.maxCount}문항` +
-    (two ? ` · 2문항씩 틀린 두 학생이 동점일 확률 ${pct(two.tie)}` : '') +
-    ' · 문항 수를 고치거나 자물쇠를 누르면 그 줄을 고정하고 나머지를 다시 계산합니다 (0 = 그 배점 안 씀).';
+  renderStats(s, step);
+  $('summary').textContent = '문항 수를 고치거나 자물쇠를 누르면 그 줄을 고정하고 나머지를 다시 계산합니다 (0 = 그 배점을 안 씁니다).';
   $('copyMsg').textContent = '';
+}
+
+/* ───────────── 지표 ───────────── */
+// 작은 표 하나를 만든다. rows의 각 칸은 글자 또는 { html } (색 뱃지용)
+function statTable(caption, head, rows, note) {
+  const box = el('div', 'rounded border border-rule');
+  box.append(el('div', 'border-b border-rule bg-head-soft px-3 py-1.5 text-sm font-semibold', caption));
+  const t = el('table', 'w-full table-fixed border-collapse text-sm tabular-nums');
+  const hr = el('tr', 'text-muted [&>th]:border-b [&>th]:border-rule [&>th]:px-3 [&>th]:py-1.5 [&>th]:font-normal');
+  head.forEach((h, i) => hr.append(el('th', i === 0 ? 'text-left' : 'text-right', h)));
+  const thead = el('thead');
+  thead.append(hr);
+  const tbody = el('tbody');
+  for (const row of rows) {
+    const tr = el('tr', '[&>td]:border-t [&>td]:border-rule [&>td]:px-3 [&>td]:py-1.5');
+    row.forEach((c, i) => {
+      const td = el('td', i === 0 ? 'text-left' : 'text-right');
+      if (c && typeof c === 'object') td.append(c.node); else td.textContent = c;
+      tr.append(td);
+    });
+    tbody.append(tr);
+  }
+  t.append(thead, tbody);
+  box.append(t);
+  if (note) box.append(el('p', 'border-t border-rule px-3 py-1.5 text-sm text-muted', note));
+  return box;
+}
+
+// 난이도별 몫과, 몇 문항씩 틀린 두 학생이 같은 점수가 될 확률
+function renderStats(s, step) {
+  const badge = name => {
+    const span = el('span', 'rounded px-2 py-0.5 text-sm font-semibold ' + TIER_CLS[name], name);
+    return { node: span };
+  };
+  const tiers = s.tierStats.filter(t => t.count > 0).map(t =>
+    [badge(t.name), `${t.count}문항`, `${fmt(t.points, step)}점`, `${t.kinds}가지`]);
+  const left = statTable('난이도별 몫', ['난이도', '문항 수', '점수', '배점 가지수'], tiers,
+    `배점 ${s.kinds}가지 · ${fmt(s.min, step)}~${fmt(s.max, step)}점 · 한 배점에 최다 ${s.maxCount}문항` +
+    (s.skipped ? ` · 건너뛴 배점 ${s.skipped}칸` : ''));
+
+  const ties = s.miss.map(m =>
+    [`${m.wrong}문항`, countText(m.scores) + '가지', pct(m.tie)]);
+  const right = statTable('동점이 날 확률', ['틀린 문항', '나올 점수', '동점 확률'], ties,
+    '같은 수의 문항을 (서로 다르게) 틀린 두 학생이 같은 점수를 받을 확률입니다. 낮을수록 좋습니다.');
+
+  $('stats').replaceChildren(left, right);
 }
 
 // 문항 수 칸은 엑셀처럼 직접 고친다. 고친 수는 그 배점에 고정되고(0이면 그 배점을 쓰지 않음)
 // 나머지 문항·점수만 다시 계산한다. Enter나 다른 칸으로 옮길 때 반영된다
 function countCell(r, step) {
+  const n = Number($('count').value);
   const td = el('td', '!p-0');
   const input = el('input', 'cell !text-base' + (r.locked ? ' font-semibold' : ''));
   input.type = 'number';
   input.min = '0';
+  input.max = String(n);
   input.step = '1';
   input.value = r.count;
   input.setAttribute('aria-label', `${fmt(r.value, step)}점 문항 수`);
-  input.title = '고치면 이 배점의 문항 수로 고정하고 나머지를 다시 계산합니다';
-  input.addEventListener('keydown', e => { if (e.key === 'Enter') input.blur(); });
-  input.addEventListener('change', () => {
-    const c = Number(input.value);
-    if (!Number.isInteger(c) || c < 0) { input.value = r.count; return; }
+  input.title = `고치면 이 배점의 문항 수로 고정하고 나머지를 다시 계산합니다 (0 ~ ${n})`;
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); input.blur(); } });
+  // 위아래 화살표를 연달아 누르면 누를 때마다 계산하지 않고, 손을 뗀 뒤 잠깐 기다려 한 번만 계산한다
+  let timer = 0;
+  const commit = () => {
+    clearTimeout(timer);
+    let c = Math.round(Number(input.value));
+    if (!Number.isFinite(c)) { input.value = r.count; return; }
+    c = Math.min(Math.max(c, 0), n);
+    input.value = c;
     if (c === r.count && r.locked) return;
     setLock(r.value, c);
-  });
+  };
+  input.addEventListener('change', () => { clearTimeout(timer); timer = setTimeout(commit, 350); });
+  input.addEventListener('blur', commit);
   td.append(input);
   return td;
 }
