@@ -24,7 +24,8 @@ const letter = t => { const c = t.toUpperCase().codePointAt(0); return c >= 65 &
 
 const KINDS = [
   // 번호로 쓰라고 만든 글자들 ─ 본문에 섞일 일이 없다
-  { id: 'circle',  name: '①②③ 번호',   src: '[\\u2460-\\u2473]', ord: inRange(0x2460, 0x2473) },
+  { id: 'circle',  name: '①②③ 번호',   src: '[\\u2460-\\u2473\\u3251-\\u325F\\u32B1-\\u32BF]',
+    ord: t => circleOrd(t.codePointAt(0)) },
   { id: 'circleB', name: '❶➀ 번호',     src: '[\\u2776-\\u277F\\u2780-\\u2789]',
     ord: t => { const c = t.codePointAt(0); return c <= 0x277F ? (c - 0x2776) % 10 : (c - 0x2780) % 10; } },
   { id: 'circleK', name: '㉠㉮ 번호',    src: '[\\u3260-\\u327B\\u3200-\\u321E]',
@@ -41,13 +42,13 @@ const KINDS = [
   // 괄호로 묶은 번호 ─ 괄호가 있어 본문과 갈린다
   { id: 'korP',    name: '(ㄱ)(ㄴ) 번호', src: '\\(\\s*[\\u3131-\\u314E]\\s*\\)', ord: t => at(JAMO_S, t.replace(/[()\s]/g, '')) },
   { id: 'hangul',  name: '(가)(나) 번호', src: '\\(\\s*[가-힣]\\s*\\)',          ord: t => at(GANADA_S, t.replace(/[()\s]/g, '')) },
-  { id: 'parenL',  name: '(A)(B) 번호',   src: '\\(\\s*[A-Za-z]\\s*\\)',         ord: t => letter(t.replace(/[()\s]/g, '')) },
+  { id: 'parenL',  name: '(A)(B) 번호',   src: '\\(\\s*[A-Za-z]{1,2}\\s*\\)',   ord: t => latinOrd(t.replace(/[()\s]/g, '')) },
   { id: 'paren',   name: '(1)(2) 번호',   src: '\\(\\s*\\d{1,2}\\s*\\)',         ord: digit },
 
   // 마침표나 닫는 괄호가 붙은 번호
   { id: 'kor',     name: 'ㄱㄴㄷ 번호',   src: '[\\u3131-\\u314E]\\s*[.)]',      ord: t => at(JAMO_S, t[0]) },
   { id: 'num',     name: '1. 2. 번호',    src: '\\d{1,2}\\s*[.)]',               ord: digit },
-  { id: 'latin',   name: 'A. B. 번호',    src: '[A-Za-z]\\s*[.)]',               ord: t => letter(t[0]), needsSeq: true },
+  { id: 'latin',   name: 'A. B. 번호',    src: '[A-Za-z]{1,2}\\s*[.)]',         ord: t => latinOrd(t.replace(/[.)\s]/g, '')), needsSeq: true },
   { id: 'hangulD', name: '가. 나. 번호',  src: '[가-힣]\\s*[.)]',                ord: t => at(GANADA_S, t[0]), needsSeq: true },
 
   // 머리표 ─ 차례가 없으니 모두 같은 것으로 본다
@@ -56,7 +57,7 @@ const KINDS = [
 
   // 표시가 없는 맨 토큰 ─ 본문과 가장 헷갈리므로 차례가 이어질 때만 번호로 본다
   { id: 'bareN',   name: '1 2 3 번호',    src: '\\d{1,2}(?=\\s|$)',              ord: digit,            needsSeq: true },
-  { id: 'bareL',   name: 'A B C 번호',    src: '[A-Za-z](?=\\s|$)',              ord: letter,           needsSeq: true },
+  { id: 'bareL',   name: 'A B C 번호',    src: '[A-Za-z]{1,2}(?=\\s|$)',        ord: t => latinOrd(t), needsSeq: true },
   { id: 'bareJ',   name: 'ㄱ ㄴ ㄷ 번호', src: '[\\u3131-\\u314E](?=\\s|$)',     ord: t => at(JAMO_S, t),   needsSeq: true },
   { id: 'bareH',   name: '가 나 다 번호', src: '[가-힣](?=\\s|$)',               ord: t => at(GANADA_S, t), needsSeq: true },
 ];
@@ -68,25 +69,38 @@ function isSequence(kind, hits) {
   return ords.every((v, i) => v !== null && (i === 0 || v === ords[i - 1] + 1));
 }
 
-/* 번호를 다시 매길 때 쓰는 글자 */
+/* 번호를 다시 매길 때 쓰는 글자.
+   동그라미 숫자는 유니코드에 50까지 있다 (①~⑳ · ㉑~㉟ · ㊱~㊿).
+   동그라미 자모(㉠~㉭)와 동그라미 가나다(㉮~㉻)는 각각 14개뿐이라 그 뒤는 괄호 숫자로 적는다.
+   영문은 Z 다음을 엑셀 열처럼 AA, AB…로 이어 간다 */
+const circleAt = i =>
+  i < 20 ? String.fromCodePoint(0x2460 + i) :
+  i < 35 ? String.fromCodePoint(0x3251 + i - 20) :
+  i < 50 ? String.fromCodePoint(0x32B1 + i - 35) : null;
+const circleOrd = c =>
+  c >= 0x2460 && c <= 0x2473 ? c - 0x2460 :
+  c >= 0x3251 && c <= 0x325F ? c - 0x3251 + 20 :
+  c >= 0x32B1 && c <= 0x32BF ? c - 0x32B1 + 35 : null;
+// 0→A … 25→Z, 26→AA, 27→AB
+const latinAt = i => { let s = '', n = i; for (;;) { s = String.fromCharCode(65 + n % 26) + s; n = Math.floor(n / 26) - 1; if (n < 0) return s; } };
+const latinOrd = t => { let v = 0; for (const ch of t.toUpperCase()) { const d = ch.codePointAt(0) - 64; if (d < 1 || d > 26) return null; v = v * 26 + d; } return v - 1; };
 const CIRCLE = [...'①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳'];
 const JAMO   = [...'ㄱㄴㄷㄹㅁㅂㅅㅇㅈㅊㅋㅌㅍㅎ'];
 const GANADA = [...'가나다라마바사아자차카타파하'];
-const LATIN  = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'];
 
 /* 선지 사이를 띄우는 글자 */
 const SEP = { sp1: ' ', tab: '\t', tab2: '\t\t', sp2: '  ', sp4: '    ' };
 
 function markerOf(style, i) {
   switch (style) {
-    case 'circle': return CIRCLE[i] || '(' + (i + 1) + ')';
+    case 'circle': return circleAt(i) || '(' + (i + 1) + ')';
     case 'kor':    return (JAMO[i] || String(i + 1)) + '.';
     case 'num':    return (i + 1) + '.';
     case 'paren':  return '(' + (i + 1) + ')';
     case 'hangul': return '(' + (GANADA[i] || (i + 1)) + ')';
     case 'circleK': return i < 14 ? String.fromCodePoint(0x3260 + i) : '(' + (i + 1) + ')';
-    case 'latin':  return (LATIN[i] || String(i + 1)) + '.';
-    case 'parenL': return '(' + (LATIN[i] || (i + 1)) + ')';
+    case 'latin':  return latinAt(i) + '.';
+    case 'parenL': return '(' + latinAt(i) + ')';
     case 'bullet': return '◦';
     case 'none':   return '';
   }

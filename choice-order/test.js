@@ -423,7 +423,33 @@ for (const c of CASES) {
   const many = Array.from({ length: 25 }, (_, i) => `${i + 1}. 선지 ${'가'.repeat(25 - i)}`).join('\n');
   const r = X.rearrange(many, { order: 'len', mark: 'circle' });
   check('선지 25개', r.ok && r.placed.length === 25, String(r.placed && r.placed.length));
-  check('동그라미가 모자라면 (21)로 적는다', r.markers[20] === '(21)', r.markers[20]);
+  check('21번째는 ㉑로 적는다', r.markers[20] === '㉑', r.markers[20]);
+
+  // 번호 모양마다 유니코드에 있는 데까지 쓰고, 넘으면 괄호 숫자로 적는다
+  const m = (style, i) => X.markerOf(style, i);
+  check('동그라미 숫자는 50까지', m('circle', 19) === '⑳' && m('circle', 20) === '㉑'
+    && m('circle', 34) === '㉟' && m('circle', 35) === '㊱' && m('circle', 49) === '㊿',
+    [19, 20, 34, 35, 49].map(i => m('circle', i)).join(' '));
+  check('동그라미 숫자 51번째는 괄호로', m('circle', 50) === '(51)', m('circle', 50));
+  check('동그라미 자모는 14까지', m('circleK', 13) === '㉭' && m('circleK', 14) === '(15)',
+    m('circleK', 13) + ' ' + m('circleK', 14));
+  check('ㄱㄴㄷ은 14까지', m('kor', 13) === 'ㅎ.', m('kor', 13));
+  check('(가)(나)는 14까지', m('hangul', 13) === '(하)' && m('hangul', 14) === '(15)',
+    m('hangul', 13) + ' ' + m('hangul', 14));
+  check('영문은 Z 다음에 AA', m('latin', 25) === 'Z.' && m('latin', 26) === 'AA.'
+    && m('latin', 51) === 'AZ.' && m('latin', 52) === 'BA.',
+    [25, 26, 51, 52].map(i => m('latin', i)).join(' '));
+  check('(A)도 Z 다음에 (AA)', m('parenL', 26) === '(AA)', m('parenL', 26));
+
+  // 넓힌 번호를 읽기도 한다
+  const wide = Array.from({ length: 30 }, (_, i) => m('circle', i) + ' 선택지 ' + '가'.repeat(30 - i)).join('\n');
+  const rw = X.rearrange(wide, { order: 'len' });
+  check('㉑ 같은 번호도 읽는다', rw.ok && rw.kindId === 'circle' && rw.items.length === 30,
+    rw.ok ? rw.kindId + ' ' + rw.items.length : '못 읽음');
+  const wideL = Array.from({ length: 28 }, (_, i) => m('latin', i) + ' 선택지 ' + '가'.repeat(28 - i)).join('\n');
+  const rl = X.rearrange(wideL, { order: 'len' });
+  check('AA. 같은 번호도 읽는다', rl.ok && rl.kindId === 'latin' && rl.items.length === 28,
+    rl.ok ? rl.kindId + ' ' + rl.items.length : '못 읽음');
 }
 
 /* ───────────── 14. 화면 쪽 ───────────── */
