@@ -139,6 +139,7 @@ tailwind.config = {
 
   <div id="errorBox" class="hidden rounded border border-rule border-l-4 border-l-seal p-3" role="alert"></div>
   <div id="relaxBox" class="hidden rounded border border-rule border-l-4 border-l-warn-fg bg-warn-bg/40 p-3 text-sm"></div>
+  <div id="noteBox" class="hidden rounded border border-rule border-l-4 border-l-head bg-head-soft/40 p-3 text-sm"></div>
 
   <!-- 결과 -->
   <section id="resultSec" class="hidden space-y-2" aria-label="배점표">
@@ -324,12 +325,24 @@ async function calculate() {
   const my = ++runId;
   cancelSolving();
   const btn = $('runBtn');
+  const t0 = Date.now();
   btn.textContent = '계산 중…';
+  btn.disabled = true;
+  btn.classList.add('opacity-60');
+  // 1초가 넘어가면 멈춘 게 아니라 아직 찾는 중임을 초 단위로 알린다
+  const tick = setInterval(() => {
+    $('staleMsg').textContent = `계산 중… ${Math.round((Date.now() - t0) / 1000)}초`;
+    $('staleMsg').classList.remove('hidden');
+  }, 1000);
   try {
     await run(() => my !== runId);
   } finally {
+    clearInterval(tick);
     if (my === runId) {
       btn.textContent = '계산';
+      btn.disabled = false;
+      btn.classList.remove('opacity-60');
+      $('staleMsg').textContent = '조건이 바뀌었습니다';
       $('staleMsg').classList.add('hidden');
       $('resultSec').classList.remove('opacity-40');
     }
@@ -522,6 +535,7 @@ function showError(msg) {
   if (actions) $('errorBox').append(actions);
   $('errorBox').classList.remove('hidden');
   $('relaxBox').classList.add('hidden');
+  $('noteBox').classList.add('hidden');
   // 고정 때문에 해가 없을 수 있으니 고정 해제 줄은 남긴다
   $('resultSec').classList.toggle('hidden', !state.locks.length);
   for (const id of ['navRow', 'tableWrap', 'stats', 'summary']) $(id).classList.add('hidden');
@@ -547,6 +561,27 @@ function renderRelaxed(res) {
     calculate();
   });
   box.append(apply);
+  box.classList.remove('hidden');
+}
+
+// 배점 간격이 촘촘하면 탐색 표가 너무 커져 가지수별로 찾지 못하고 가장 좋은 가지수 하나만 찾는다.
+// ◀ ▶가 잠긴 까닭을 알려 주고, 간격을 한 단계 넓혀 볼 수 있게 한다
+function renderNote(e, step) {
+  const box = $('noteBox');
+  box.replaceChildren();
+  if (!e.onlyBest && !e.altNote) { box.classList.add('hidden'); return; }
+  if (e.altNote) box.append(el('p', '', '다른 안은 더 찾지 못했습니다. ' + e.altNote));
+  if (e.onlyBest) {
+    box.append(el('span', 'font-semibold', '찾아볼 배점이 많아 '),
+      `배점 ${e.kinds}가지 하나만 찾았습니다. 다른 가지수도 보려면 배점 간격을 넓히거나, 세부 조건에서 배점 범위를 좁히세요.`);
+  }
+  const wider = [...$('step').options].map(o => Number(o.value)).find(v => v > step);
+  if (wider) {
+    const b = el('button', 'ml-2 font-semibold underline underline-offset-2 text-blue-700 hover:text-blue-900', `배점 간격 ${wider}점으로 넓히기`);
+    b.type = 'button';
+    b.addEventListener('click', () => { $('step').value = String(wider); fillAuto(); calculate(); });
+    box.append(b);
+  }
   box.classList.remove('hidden');
 }
 
@@ -611,6 +646,7 @@ function render() {
 
   // 가지수 하나만 계산한 경우 (배점 간격이 아주 촘촘할 때)
   if (e.onlyBest) $('pickLabel').textContent = `배점 ${e.kinds}가지 (최적)`;
+  renderNote(e, step);
   renderStats(s, step);
   $('summary').textContent = '문항 수를 고치거나 자물쇠를 누르면 그 줄을 고정하고 나머지를 다시 계산합니다 (0 = 그 배점을 안 씁니다).';
   $('copyMsg').textContent = '';
@@ -712,12 +748,21 @@ async function goAlt(target, stale = () => false) {
     state.altBusy = true;
     $('altLabel').textContent = '찾는 중…';
     $('altNext').disabled = true;
-    const r = await solveAsync({ ...e.options, kinds: e.kinds }, { limit: Math.ceil((target + 1) / 10) * 10 });
+    const want = Math.ceil((target + 1) / 10) * 10;
+    const r = await solveAsync({ ...e.options, kinds: e.kinds }, { limit: want });
     state.altBusy = false;
     if (stale() || entry() !== e) return;
-    if (r.error) { $('copyMsg').textContent = r.error; render(); return; }
+    if (r.error) {
+      // 더 찾을 수 없으니 지금 가진 안이 전부다
+      e.found = e.alts.length;
+      e.altNote = r.error;
+      render();
+      return;
+    }
     e.alts = r.solutions;
-    e.found = r.found;
+    // 조합 수(found)는 가지수를 가리지 않고 센 값이라 실제 안보다 많을 수 있다.
+    // 달라고 한 만큼 못 받았으면 이게 전부이므로, 찾은 수로 바로잡아 [다른 안]을 잠근다
+    e.found = r.solutions.length < want ? r.solutions.length : r.found;
     target = Math.min(target, e.alts.length - 1);
   }
   e.alt = target;
