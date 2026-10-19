@@ -96,10 +96,10 @@ tailwind.config = {
     <!-- 세부 조건은 계산 버튼 아래까지 전체 너비로 펼친다. 버튼은 접힌 제목 줄 오른쪽에 얹는다 -->
     <div class="relative mt-2">
       <div class="absolute right-0 top-0 flex items-center gap-3">
-        <span id="staleMsg" class="hidden text-sm text-warn-fg">조건이 바뀌었습니다</span>
+        <span id="staleMsg" class="hidden text-warn-fg">조건이 바뀌었습니다</span>
         <button id="runBtn" type="button" class="rounded bg-head px-5 py-1.5 font-semibold text-white hover:bg-ink">계산</button>
       </div>
-      <details id="advanced" class="text-sm">
+      <details id="advanced">
       <summary class="w-fit cursor-pointer py-2 font-semibold text-head hover:text-ink">세부 조건</summary>
       <div class="mt-2 grid gap-3 rounded border border-rule p-3 sm:grid-cols-2">
         <!-- label로 감싸면 빈 곳을 눌러도 안의 "자동" 버튼이 눌리므로 div를 쓴다 -->
@@ -138,8 +138,8 @@ tailwind.config = {
   </section>
 
   <div id="errorBox" class="hidden rounded border border-rule border-l-4 border-l-seal p-3" role="alert"></div>
-  <div id="relaxBox" class="hidden rounded border border-rule border-l-4 border-l-warn-fg bg-warn-bg/40 p-3 text-sm"></div>
-  <div id="noteBox" class="hidden rounded border border-rule border-l-4 border-l-head bg-head-soft/40 p-3 text-sm"></div>
+  <div id="relaxBox" class="hidden rounded border border-rule border-l-4 border-l-warn-fg bg-warn-bg/40 p-3"></div>
+  <div id="noteBox" class="hidden rounded border border-rule border-l-4 border-l-head bg-head-soft/40 p-3"></div>
 
   <!-- 결과 -->
   <section id="resultSec" class="hidden space-y-2" aria-label="배점표">
@@ -156,13 +156,13 @@ tailwind.config = {
         <button id="altNext" type="button" aria-label="같은 가지수의 다른 안" class="bg-head-soft px-3 py-1.5 leading-none font-semibold text-head hover:bg-head hover:text-white disabled:bg-transparent disabled:text-rule">다른 안 ›</button>
       </div>
       <span class="flex w-full flex-wrap items-center justify-end gap-2 sm:ml-auto sm:w-auto">
-        <span id="copyMsg" class="text-sm text-muted" aria-live="polite"></span>
+        <span id="copyMsg" class="text-muted" aria-live="polite"></span>
         <button id="copyBtn" type="button" class="rounded bg-head px-3 py-1.5 font-semibold text-white hover:bg-ink">표 복사</button>
         <button id="linkBtn" type="button" class="rounded border border-rule-strong px-3 py-1.5 font-semibold text-head hover:bg-head-soft">링크 복사</button>
       </span>
     </div>
 
-    <div id="lockBar" class="hidden flex flex-wrap items-center gap-2 text-sm"></div>
+    <div id="lockBar" class="hidden flex flex-wrap items-center gap-2"></div>
 
     <div id="tableWrap" class="overflow-x-auto">
       <table class="w-full min-w-[30rem] table-fixed border-collapse tabular-nums">
@@ -181,7 +181,7 @@ tailwind.config = {
       </table>
     </div>
     <div id="stats" class="grid gap-3 sm:grid-cols-2"></div>
-    <p id="summary" class="text-sm text-muted"></p>
+    <p id="summary" class="text-muted"></p>
   </section>
 </main>
 
@@ -505,7 +505,7 @@ async function run(stale = () => false) {
 
 // 에러 줄에는 바로 누를 수 있는 해결책을 함께 놓는다 (세부 조건 열기, 자동으로 되돌리기, 고정 해제)
 function errorActions() {
-  const row = el('div', 'mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm');
+  const row = el('div', 'mt-2 flex flex-wrap items-center gap-x-4 gap-y-1');
   const add = (text, fn) => {
     const b = el('button', 'font-semibold underline underline-offset-2 text-blue-700 hover:text-blue-900', text);
     b.type = 'button';
@@ -630,14 +630,14 @@ function render() {
     lb.addEventListener('click', () => setLock(r.value, r.locked ? null : r.count));
     lt.append(lb);
     const tier = el('td');
-    if (r.tier) tier.append(el('span', 'rounded px-2 py-0.5 text-sm font-semibold ' + TIER_CLS[r.tier], r.tier));
+    if (r.tier) tier.append(el('span', 'rounded px-2 py-0.5 font-semibold ' + TIER_CLS[r.tier], r.tier));
     tr.append(lt,
       el('td', 'font-semibold', fmt(r.value, step)),
       countCell(r, step),
       el('td', '', fmt(r.subtotal, step)),
       el('td', r.gap != null && r.gap > step + 1e-9 ? 'text-warn-fg font-semibold' : 'text-muted', r.gap == null ? '' : fmt(r.gap, step)),
       tier);
-    if (r.zero) tier.append(el('span', 'text-sm', '안 씀'));
+    if (r.zero) tier.append(el('span', '', '안 씀'));
     tb.append(tr);
   }
   const ft = el('tr', 'bg-head-soft font-semibold [&>td]:border [&>td]:border-rule [&>td]:px-3 [&>td]:py-2 [&>td]:text-center');
@@ -656,8 +656,8 @@ function render() {
 // 작은 표 하나를 만든다. rows의 각 칸은 글자 또는 { html } (색 뱃지용)
 function statTable(caption, head, rows, note) {
   const box = el('div', 'rounded border border-rule');
-  box.append(el('div', 'border-b border-rule bg-head-soft px-3 py-1.5 text-sm font-semibold', caption));
-  const t = el('table', 'w-full table-fixed border-collapse text-sm tabular-nums');
+  box.append(el('div', 'border-b border-rule bg-head-soft px-3 py-1.5 font-semibold', caption));
+  const t = el('table', 'w-full table-fixed border-collapse tabular-nums');
   const hr = el('tr', 'text-muted [&>th]:border-b [&>th]:border-rule [&>th]:px-3 [&>th]:py-1.5 [&>th]:font-normal');
   head.forEach((h, i) => hr.append(el('th', i === 0 ? 'text-left' : 'text-right', h)));
   const thead = el('thead');
@@ -674,14 +674,14 @@ function statTable(caption, head, rows, note) {
   }
   t.append(thead, tbody);
   box.append(t);
-  if (note) box.append(el('p', 'border-t border-rule px-3 py-1.5 text-sm text-muted', note));
+  if (note) box.append(el('p', 'border-t border-rule px-3 py-1.5 text-muted', note));
   return box;
 }
 
 // 난이도별 몫과, 몇 문항씩 틀린 두 학생이 같은 점수가 될 확률
 function renderStats(s, step) {
   const badge = name => {
-    const span = el('span', 'rounded px-2 py-0.5 text-sm font-semibold ' + TIER_CLS[name], name);
+    const span = el('span', 'rounded px-2 py-0.5 font-semibold ' + TIER_CLS[name], name);
     return { node: span };
   };
   const tiers = s.tierStats.filter(t => t.count > 0).map(t =>

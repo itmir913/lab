@@ -147,7 +147,18 @@ for (const e of precalc) {
   }
 }
 
-/* 5. 난이도 비율 나누기 */
+/* 5. 글자 크기: text-base(1rem)보다 작은 글씨를 쓰지 않는다 (작은 숫자는 눈이 아프다) */
+const fs = require('fs');
+const page = fs.readFileSync(require('path').join(__dirname, 'index.html'), 'utf8');
+const small = page.match(/\btext-(xs|sm)\b/g) || [];
+check('text-base보다 작은 글자 클래스를 쓰지 않는다', small.length === 0, small.join(', '));
+// <style>에 직접 쓴 글자 크기도 1rem 아래로 내려가면 안 된다
+for (const m of page.matchAll(/font-size:\s*([\d.]+)(rem|em|px)/g)) {
+  const px = m[2] === 'px' ? +m[1] : +m[1] * 16;
+  check(`font-size ${m[1]}${m[2]}가 1rem 이상이다`, px >= 16);
+}
+
+/* 6. 난이도 비율 나누기 */
 check('비율 3:4:3 → 23문항', X.splitByRatio(23, [3, 4, 3]).reduce((a, b) => a + b, 0) === 23);
 check('비율 1:0:1 → 중간이 0', X.splitByRatio(10, [1, 0, 1])[1] === 0);
 check('비율 0:1:0 → 전부 중', X.splitByRatio(10, [0, 1, 0])[1] === 10);
