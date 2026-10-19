@@ -75,9 +75,7 @@ tailwind.config = {
               </select>
             </td>
             <td>
-              <select id="kinds" aria-label="배점 가지수" class="cell">
-                <option value="0">자동</option>
-              </select>
+              <input id="kinds" type="number" min="1" step="1" placeholder="자동" aria-label="배점 가지수 (비우면 자동)" class="cell placeholder:text-muted">
             </td>
             <td>
               <div class="flex items-center">
@@ -343,7 +341,7 @@ $('step').addEventListener('change', () => { fillAuto(); schedule(); });
 for (const id of ['min', 'max']) $(id).addEventListener('input', () => { state.auto.range = false; fillAuto(); schedule(); });
 $('maxPer').addEventListener('input', () => { state.auto.maxPer = false; fillAuto(); schedule(); });
 $('exclude').addEventListener('input', schedule);
-$('kinds').addEventListener('change', schedule);
+$('kinds').addEventListener('input', schedule);
 $('maxSkip').addEventListener('change', schedule);
 $('rangeAuto').addEventListener('click', () => { state.auto.range = true; fillAuto(); schedule(); });
 $('maxPerAuto').addEventListener('click', () => { state.auto.maxPer = true; fillAuto(); schedule(); });
@@ -393,7 +391,7 @@ function writeUrl() {
   if (ratio.join('-') !== DEFAULT_RATIO.join('-')) put('ratio', ratio.join('-'));
   if (!state.auto.range) { put('min', $('min').value); put('max', $('max').value); }
   if (!state.auto.maxPer) put('maxPer', $('maxPer').value);
-  if ($('kinds').value !== '0') put('kinds', $('kinds').value);
+  if (Number($('kinds').value) > 0) put('kinds', $('kinds').value);
   if ($('maxSkip').value !== '1') put('skip', $('maxSkip').value);
   const e = state.result && entry();
   if (e && e.alt > 0) put('alt', e.alt + 1);
@@ -416,7 +414,7 @@ function readUrl() {
   if (has('min') && has('max')) { $('min').value = q.get('min'); $('max').value = q.get('max'); state.auto.range = false; }
   if (has('maxPer')) { $('maxPer').value = q.get('maxPer'); state.auto.maxPer = false; }
   const k = parseInt(q.get('kinds'), 10);
-  if (k > 0) setKindsOptions([k], k);
+  if (k > 0) $('kinds').value = k;
   if (has('skip') && [...$('maxSkip').options].some(o => o.value === q.get('skip'))) $('maxSkip').value = q.get('skip');
   if (has('exclude')) $('exclude').value = q.get('exclude').split(',').join(', ');
   if (has('lock')) {
@@ -431,13 +429,10 @@ function readUrl() {
 }
 
 /* ───────────── 계산 ───────────── */
-// 배점 가지수 선택 상자: 자동 + 범위 안에서 가능한 가지수들
-function setKindsOptions(ks, value, best) {
-  const sel = $('kinds');
-  const keep = value ?? Number(sel.value);
-  sel.replaceChildren(new Option(best ? `자동 (${best}가지)` : '자동', '0'));
-  for (const k of [...new Set(ks)].sort((a, b) => a - b)) sel.append(new Option(`${k}가지`, String(k)));
-  sel.value = [...sel.options].some(o => o.value === String(keep)) ? String(keep) : '0';
+// 배점 가지수 칸: 비우면 자동(가장 좋은 가지수). 비어 있을 때 회색 글자로 그 가지수를 보여 준다
+function setKinds(value, best) {
+  $('kinds').value = value ? String(value) : '';
+  $('kinds').placeholder = best ? `자동 (${best}가지)` : '자동';
 }
 
 // stale(): 더 새 계산이 시작됐으면 true - 그때는 결과를 버린다
@@ -475,10 +470,7 @@ async function run(stale = () => false) {
   }
   list.sort((a, b) => a.kinds - b.kinds);
 
-  // 1..범위 안 배점 수 중 고를 수 있게 한다
-  const P = X.prepare({ ...res.options, kinds: 0 });
-  const most = P.error ? want : Math.min(o.count, P.vals.length);
-  setKindsOptions([...Array(most).keys()].map(i => i + 1).concat(list.map(k => k.kinds)), want === best ? 0 : want, best);
+  setKinds(want === best ? 0 : want, best);
   state.calculated = snapshot();
 
   state.result = { list, best };
@@ -620,7 +612,7 @@ function moveView(d) {
   const k = list[list.indexOf(entry()) + d];
   if (!k) return;
   state.view = k.kinds;
-  $('kinds').value = k.kinds === best ? '0' : String(k.kinds);
+  setKinds(k.kinds === best ? 0 : k.kinds, best);
   // 이미 계산해 둔 가지수로 옮긴 것이므로 "조건이 바뀌었습니다"로 치지 않는다
   state.calculated = snapshot();
   render();
