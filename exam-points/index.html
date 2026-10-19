@@ -105,7 +105,7 @@ tailwind.config = {
         <!-- label로 감싸면 빈 곳을 눌러도 안의 "자동" 버튼이 눌리므로 div를 쓴다 -->
         <div class="space-y-1">
           <span class="flex items-center gap-2">배점 범위
-            <button id="rangeAuto" type="button" class="hidden underline underline-offset-2 text-muted hover:text-seal">자동</button>
+            <button id="rangeAuto" type="button" class="hidden text-blue-700 underline underline-offset-2 hover:text-blue-900">자동으로 되돌리기</button>
           </span>
           <span class="flex items-center gap-1">
             <input id="min" type="number" step="any" aria-label="최소 배점" class="field">
@@ -116,7 +116,7 @@ tailwind.config = {
         </div>
         <div class="space-y-1">
           <span class="flex items-center gap-2"><label for="maxPer">한 배점당 최대 문항 수</label>
-            <button id="maxPerAuto" type="button" class="hidden underline underline-offset-2 text-muted hover:text-seal">자동</button>
+            <button id="maxPerAuto" type="button" class="hidden text-blue-700 underline underline-offset-2 hover:text-blue-900">자동으로 되돌리기</button>
           </span>
           <input id="maxPer" type="number" min="1" step="1" class="field">
         </div>
@@ -350,7 +350,9 @@ $('maxPerAuto').addEventListener('click', () => { state.auto.maxPer = true; fill
 for (const id of ['rHi', 'rMid', 'rLo']) $(id).addEventListener('input', schedule);
 
 /* ───────────── 고정 ───────────── */
+// 잠그거나 풀어도 보고 있던 배점 가지수는 그대로 두고, 그 가지수 안에서 나머지를 다시 계산한다
 function setLock(value, count) {
+  if (state.result) state.keepView = state.view;
   state.locks = state.locks.filter(([v]) => !sameScore(v, value));
   if (count != null) state.locks.push([value, count]);
   state.locks.sort((a, b) => b[0] - a[0]);
@@ -375,7 +377,7 @@ function renderLocks() {
   }
   const clear = el('button', 'underline underline-offset-2 text-muted hover:text-seal', '모두 해제');
   clear.type = 'button';
-  clear.addEventListener('click', () => { state.locks = []; renderLocks(); calculate(); });
+  clear.addEventListener('click', () => { state.keepView = state.view; state.locks = []; renderLocks(); calculate(); });
   bar.append(clear);
 }
 
@@ -461,7 +463,9 @@ async function run(stale = () => false) {
   // alts: 같은 가지수에서 점수 순으로 찾아 둔 안들, alt: 지금 보는 순번
   const list = res.byKinds.map(k => ({ ...k, relaxed: res.relaxed, options: res.options, alts: [k.solution], alt: 0 }));
   const best = list.slice().sort((a, b) => b.score - a.score)[0].kinds;
-  let want = o.kinds || best;
+  const keep = state.keepView;
+  state.keepView = 0;
+  let want = o.kinds || (keep && list.some(k => k.kinds === keep) ? keep : best);
   // 고른 가지수가 기본 조건으로 안 되면 그 가지수만 따로 (필요하면 조건을 풀어) 찾는다
   if (!list.some(k => k.kinds === want)) {
     const r = await solveAsync(o, { limit: 1 });
@@ -474,7 +478,8 @@ async function run(stale = () => false) {
   // 1..범위 안 배점 수 중 고를 수 있게 한다
   const P = X.prepare({ ...res.options, kinds: 0 });
   const most = P.error ? want : Math.min(o.count, P.vals.length);
-  setKindsOptions([...Array(most).keys()].map(i => i + 1).concat(list.map(k => k.kinds)), o.kinds, best);
+  setKindsOptions([...Array(most).keys()].map(i => i + 1).concat(list.map(k => k.kinds)), want === best ? 0 : want, best);
+  state.calculated = snapshot();
 
   state.result = { list, best };
   state.view = want;
