@@ -2,3 +2,6 @@
 *.pdf  binary
 *.hwp  binary
 *.hwpx binary
+
+# hook은 sh가 읽으므로 CRLF로 바뀌면 안 된다.
+.githooks/* text eol=lf
