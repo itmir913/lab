@@ -268,21 +268,55 @@ function schedule() {
   $('resultSec').classList.add('opacity-40');
   writeUrl();
 }
-function calculate() {
+/* ───────────── 계산 스레드 (Web Worker) ───────────── */
+// 탐색은 worker.js에서 돌려 화면이 멈추지 않게 한다. 계산 중에 다시 [계산]을 누르면
+// 돌던 계산은 버리고(worker를 끝내고) 새로 시작한다. Worker를 못 쓰는 환경(file:// 등)에서는 화면 스레드에서 푼다.
+let worker = null, seq = 0;
+const waiting = new Map();
+function startWorker() {
+  try {
+    worker = new Worker('./worker.js');
+  } catch (e) {
+    worker = null;
+    return;
+  }
+  worker.onmessage = e => {
+    const done = waiting.get(e.data.id);
+    waiting.delete(e.data.id);
+    if (done) done(e.data.result);
+  };
+  worker.onerror = () => { worker = null; };
+}
+function solveAsync(opts, cfg) {
+  if (!worker) return Promise.resolve(X.solveAuto(opts, cfg));
+  const id = ++seq;
+  return new Promise(resolve => {
+    waiting.set(id, resolve);
+    worker.postMessage({ id, opts, cfg });
+  });
+}
+function cancelSolving() {
+  if (!waiting.size || !worker) return;
+  worker.terminate();
+  waiting.clear();
+  startWorker();
+}
+
+let runId = 0;
+async function calculate() {
+  const my = ++runId;
+  cancelSolving();
   const btn = $('runBtn');
-  btn.disabled = true;
   btn.textContent = '계산 중…';
-  // 버튼 글자가 먼저 그려지도록 한 박자 늦게 계산한다
-  setTimeout(() => {
-    try {
-      run();
-    } finally {
-      btn.disabled = false;
+  try {
+    await run(() => my !== runId);
+  } finally {
+    if (my === runId) {
       btn.textContent = '계산';
       $('staleMsg').classList.add('hidden');
       $('resultSec').classList.remove('opacity-40');
     }
-  }, 20);
+  }
 }
 $('runBtn').addEventListener('click', calculate);
 document.querySelectorAll('section[aria-label="조건"] input').forEach(i =>
@@ -384,7 +418,8 @@ function setKindsOptions(ks, value, best) {
   sel.value = [...sel.options].some(o => o.value === String(keep)) ? String(keep) : '0';
 }
 
-function run() {
+// stale(): 더 새 계산이 시작됐으면 true - 그때는 결과를 버린다
+async function run(stale = () => false) {
   const o = readOptions();
   const bad = checkInputs(o);
   if (bad) return showError(bad);
@@ -397,7 +432,8 @@ function run() {
     res = { options: hit.solved, relaxed: hit.relaxed,
             byKinds: hit.byKinds.map(k => ({ ...k, solution: X.expand(hit.solved, k.groups) })) };
   } else {
-    res = X.solveAuto(free, { perKinds: true });
+    res = await solveAsync(free, { perKinds: true });
+    if (stale()) return;
   }
   if (res.error) return showError(res.error);
 
@@ -406,7 +442,8 @@ function run() {
   let want = o.kinds || best;
   // 고른 가지수가 기본 조건으로 안 되면 그 가지수만 따로 (필요하면 조건을 풀어) 찾는다
   if (!list.some(k => k.kinds === want)) {
-    const r = X.solveAuto(o, { limit: 1 });
+    const r = await solveAsync(o, { limit: 1 });
+    if (stale()) return;
     if (r.error) return showError(`배점 ${want}가지로는 나눌 수 없습니다. ` + r.error);
     list.push({ kinds: want, found: r.found, score: r.solutions[0].score, solution: r.solutions[0], relaxed: r.relaxed, options: r.options });
   }
@@ -452,7 +489,7 @@ function renderRelaxed(res) {
     state.auto.maxPer = false;
     $('min').value = o.min; $('max').value = o.max; $('maxPer').value = o.maxPer;
     fillAuto();
-    run();
+    calculate();
   });
   box.append(apply);
   box.classList.remove('hidden');
@@ -621,6 +658,7 @@ async function loadPrecalc() {
   }
 }
 
+startWorker();
 readUrl();
 fillAuto();
 loadPrecalc().finally(calculate);
