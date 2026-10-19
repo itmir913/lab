@@ -45,6 +45,9 @@ jobs:
       - name: Test exam-points solver
         run: node exam-points/test.js
 
+      - name: Test choice-order sorter
+        run: node choice-order/test.js
+
       - name: Build manifest
         run: python3 .github/scripts/build_manifest.py
 
