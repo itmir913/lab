@@ -250,7 +250,20 @@ function parse(text) {
     rows.push({ prefix, cells });
   });
 
-  return { kindName: best.kind.name, rows, items, lineMode: false };
+  // 번호 없는 줄이 선지 바로 뒤에 오면 그 선지에 딸린 줄로 본다.
+  // 그래야 자리를 옮길 때 딸린 줄이 따라가고, 다시 배치할 때도 빠지지 않는다
+  const merged = [];
+  for (const row of rows) {
+    const prev = merged[merged.length - 1];
+    if (row.raw !== undefined && row.raw.trim() !== '' && prev && prev.cells) {
+      const last = prev.cells[prev.cells.length - 1];
+      items[last.slot] += '\n' + row.raw;
+      continue;
+    }
+    merged.push(row);
+  }
+
+  return { kindName: best.kind.name, rows: merged, items, lineMode: false };
 }
 
 /* 번호가 없으면 줄 그대로를 선지 한 개로 본다 */
@@ -370,18 +383,24 @@ function render() {
   const SEP = { sp1: ' ', tab: '\t', tab2: '\t\t', sp2: '  ', sp4: '    ' };
   const sepAfter = (cell, isLast) =>
     state.sep === 'keep' || isLast ? cell.sep : SEP[state.sep];
+  // 선지에 딸린 줄은 그 선지가 놓인 줄 바로 아래에 붙여 둔다
+  const head = whole => { const i = whole.indexOf('\n'); return i < 0 ? whole : whole.slice(0, i); };
+  const tail = whole => { const i = whole.indexOf('\n'); return i < 0 ? null : whole.slice(i + 1); };
+
   let out;
   if (state.layout === 'keep') {
     out = parsed.rows.map(row => {
       if (row.raw !== undefined) return row.raw;
       let line = row.prefix;
+      const under = [];
       row.cells.forEach((cell, k) => {
-        const body = items[picked[cell.slot]];
+        const whole = items[picked[cell.slot]];
         const marker = markerAt(cell);
         const gap = state.mark === 'keep' ? cell.gap : (marker === '' ? '' : (cell.gap || ' '));
-        line += marker + gap + body + sepAfter(cell, k === row.cells.length - 1);
+        line += marker + gap + head(whole) + sepAfter(cell, k === row.cells.length - 1);
+        if (tail(whole) !== null) under.push(tail(whole));
       });
-      return line;
+      return under.length ? [line, ...under].join('\n') : line;
     }).join('\n');
   } else {
     // 1행답항~5행답항: 선지를 줄 수에 맞춰 다시 나눈다. 앞줄부터 고르게 채운다
@@ -391,13 +410,17 @@ function render() {
     for (let r = 0; r < rowCount; r++) {
       const take = Math.ceil((slots.length - at) / (rowCount - r));
       const cells = [];
+      const under = [];
       for (let k = 0; k < take; k++, at++) {
         const cell = slots[at];
+        const whole = items[picked[cell.slot]];
         const marker = markerAt(cell);
         const gap = marker === '' ? '' : (state.mark === 'keep' ? (cell.gap || ' ') : ' ');
-        cells.push(marker + gap + items[picked[cell.slot]]);
+        cells.push(marker + gap + head(whole));
+        if (tail(whole) !== null) under.push(tail(whole));
       }
       lines.push(cells.join(state.sep === 'keep' ? SEP.tab : SEP[state.sep]));
+      lines.push(...under);
     }
     out = lines.join('\n');
   }
@@ -417,7 +440,7 @@ function render() {
     return '<tr data-i="' + i + '" tabindex="0" title="눌러서 이 선지 복사" '
       + 'class="cursor-pointer hover:bg-head-soft [&>td]:border [&>td]:border-rule [&>td]:px-3 [&>td]:py-1.5 align-top">'
       + '<td class="text-center font-semibold">' + esc(shown || (i + 1) + ')') + '</td>'
-      + '<td>' + esc(body) + '</td>'
+      + '<td class="whitespace-pre-line">' + esc(body) + '</td>'
       + '<td class="text-center tabular-nums">' + lengthOf(body, noSpace) + '</td>'
       + '<td class="text-center tabular-nums text-muted">' + (from + 1) + '</td>'
       + '</tr>';
