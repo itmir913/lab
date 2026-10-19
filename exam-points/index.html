@@ -48,6 +48,9 @@ tailwind.config = {
   .field { width: 100%; border: 1px solid #CDD6D1; border-radius: .25rem; padding: .25rem .5rem; background: #fff; font-variant-numeric: tabular-nums; }
   .field:focus { border-color: #1D2B3A; outline: none; }
   .is-auto { color: #5E6B73; }
+  /* 표의 줄에 마우스를 올리면 그 줄을 옅게 덮는다. 색을 덮지 않고 비치게 해
+     고정한 줄(노랑)과 안 쓰는 줄(회색)의 뜻이 그대로 보이게 한다 */
+  #tbody tr:hover > td { background-color: rgba(43, 69, 96, .08); }
 </style>
 <script src="./solver.js"></script>
 </head>
@@ -154,16 +157,16 @@ tailwind.config = {
   <!-- 결과 -->
   <section id="resultSec" class="hidden space-y-2" aria-label="배점표">
     <div id="navRow" class="flex flex-wrap items-center gap-2">
-      <div class="flex items-center rounded border border-rule-strong">
-        <button id="prevBtn" type="button" aria-label="배점 가지수 줄이기" class="px-3 py-1.5 text-lg leading-none font-semibold text-head hover:bg-head-soft disabled:text-rule disabled:hover:bg-transparent">◀</button>
+      <div class="flex items-stretch rounded border border-rule-strong overflow-hidden">
+        <button id="prevBtn" type="button" aria-label="배점 가지수 줄이기" class="flex items-center px-3 py-1.5 text-lg leading-none font-semibold text-head hover:bg-head-soft disabled:text-rule disabled:hover:bg-transparent">◀</button>
         <span id="pickLabel" class="min-w-[14rem] border-x border-rule px-3 py-1.5 text-center font-semibold tabular-nums" aria-live="polite"></span>
-        <button id="nextBtn" type="button" aria-label="배점 가지수 늘리기" class="px-3 py-1.5 text-lg leading-none font-semibold text-head hover:bg-head-soft disabled:text-rule disabled:hover:bg-transparent">▶</button>
+        <button id="nextBtn" type="button" aria-label="배점 가지수 늘리기" class="flex items-center px-3 py-1.5 text-lg leading-none font-semibold text-head hover:bg-head-soft disabled:text-rule disabled:hover:bg-transparent">▶</button>
       </div>
       <!-- 같은 가지수 안에서 다음으로 좋은 안 -->
-      <div class="flex items-center rounded border border-rule-strong">
-        <button id="altPrev" type="button" aria-label="같은 가지수의 이전 안" class="bg-head-soft px-3 py-1.5 leading-none font-semibold text-head hover:bg-head hover:text-white disabled:bg-transparent disabled:text-rule">‹</button>
+      <div class="flex items-stretch rounded border border-rule-strong overflow-hidden">
+        <button id="altPrev" type="button" aria-label="같은 가지수의 이전 안" class="flex items-center bg-head-soft px-3 py-1.5 leading-none font-semibold text-head hover:bg-head hover:text-white disabled:bg-transparent disabled:text-rule">‹</button>
         <span id="altLabel" class="min-w-[6.5rem] border-x border-rule px-3 py-1.5 text-center tabular-nums" aria-live="polite"></span>
-        <button id="altNext" type="button" aria-label="같은 가지수의 다른 안" class="bg-head-soft px-3 py-1.5 leading-none font-semibold text-head hover:bg-head hover:text-white disabled:bg-transparent disabled:text-rule">다른 안 ›</button>
+        <button id="altNext" type="button" aria-label="같은 가지수의 다른 안" class="flex items-center bg-head-soft px-3 py-1.5 leading-none font-semibold text-head hover:bg-head hover:text-white disabled:bg-transparent disabled:text-rule">다른 안 ›</button>
       </div>
       <span class="flex w-full flex-wrap items-center justify-end gap-2 sm:ml-auto sm:w-auto">
         <span id="copyMsg" class="text-muted" aria-live="polite"></span>
