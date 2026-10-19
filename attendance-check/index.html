@@ -4,90 +4,144 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>출결 대조</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=Noto+Serif+KR:wght@700&display=swap">
 <script src="https://cdn.tailwindcss.com"></script>
+<script>
+// 출석부 종이·볼펜 잉크·결재 인주를 바탕으로 한 색 체계
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        paper: '#F3F5F2', sheet: '#FFFFFF', ink: '#1D2B3A', 'ink-soft': '#2C3E52', muted: '#5E6B73',
+        rule: '#CDD6D1', 'rule-strong': '#8FA39A', seal: '#C2352B', marker: '#FFF1A8',
+        ok:     { fg: '#2E6A4F', bg: '#E2EFE7' },
+        diff:   { fg: '#8A5300', bg: '#F8ECD3' },
+        miss:   { fg: '#A3271F', bg: '#F7E1DE' },
+        flag:   { fg: '#34488A', bg: '#E5E9F6' },
+        exempt: { fg: '#5E6B73', bg: '#E9EDEB' },
+      },
+      fontFamily: {
+        sans: ['"IBM Plex Sans KR"', 'system-ui', 'sans-serif'],
+        serif: ['"Noto Serif KR"', 'serif'],
+      },
+    },
+  },
+};
+</script>
+<style>
+  body { word-break: keep-all; overflow-wrap: break-word; }
+  :focus-visible { outline: 2px solid #1D2B3A; outline-offset: 2px; }
+  kbd { font-family: inherit; font-size: .85em; border: 1px solid #CDD6D1; border-bottom-width: 2px; border-radius: 4px; padding: 0 .35em; background: #fff; }
+
+  /* 확인 완료 도장: 비어 있으면 점선 원, 누르면 인주색 '확인' 날인 */
+  .stamp { width: 2rem; height: 2rem; border-radius: 9999px; border: 1.5px dashed #8FA39A; color: transparent;
+           font-size: .75rem; font-weight: 700; line-height: 1; display: inline-grid; place-items: center; }
+  .stamp:hover { border-color: #1D2B3A; }
+  .stamp.is-on { border: 2px solid #C2352B; color: #C2352B; background: rgba(194, 53, 43, .06);
+                                transform: rotate(-12deg); animation: stamp-in .18s ease-out; }
+  @keyframes stamp-in { from { transform: rotate(-12deg) scale(1.6); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .stamp.is-on { animation: none; } }
+  /* 확인 완료 행은 도장만 남기고 흐리게 */
+  tr.is-done > td:not(.stamp-cell) { opacity: .45; }
+</style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" integrity="sha512-q+4liFwdPC/bNdhUpZx6aXDx/h77yEQtn4I1slHydcbZK34nLaR3cAeYSJshoxIOq3mjEf7xJE8YWIUHMn+oCQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" integrity="sha512-r22gChDnGvBylk90+2e/ycr3RVrDi8DIOkIGNhJlKfuyQM4tIRAI062MaV8sfjQKYVGjOBaZBOA87z+IhZE9DA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 </head>
-<body class="bg-slate-50 text-slate-800 text-base min-h-screen">
-<main class="max-w-screen-2xl mx-auto px-4 py-6 space-y-6">
+<body class="bg-paper text-ink font-sans text-base antialiased min-h-screen">
+<main class="max-w-screen-2xl mx-auto px-4 py-8 space-y-6">
 
-  <header class="space-y-1">
-    <h1 class="text-3xl font-bold">출결 대조</h1>
-    <p class="text-base text-slate-600">전자출결 신고서(PDF)와 NEIS 월별 출결 현황(엑셀)을 대조합니다. 모든 처리는 이 브라우저 내에서만 수행되며 파일은 외부로 전송·저장되지 않습니다.</p>
+  <header class="max-w-3xl space-y-2">
+    <h1 class="font-serif text-4xl font-bold tracking-tight">출결 대조</h1>
+    <p class="text-base text-muted leading-relaxed">전자출결 신고서(PDF)와 NEIS 월별 출결 현황(엑셀)을 대조합니다. 모든 처리는 이 브라우저 내에서만 수행되며, 파일은 외부로 전송·저장되지 않습니다.</p>
   </header>
 
-  <!-- 입력 -->
-  <section id="inputSec" class="grid gap-4 md:grid-cols-2">
-    <label id="pdfDrop" class="block bg-white rounded-xl border-2 border-dashed border-slate-300 p-5 cursor-pointer hover:border-blue-400 focus-within:ring-2 focus-within:ring-blue-300">
-      <span class="block text-lg font-semibold">① 신고서 PDF</span>
-      <span class="block text-base text-slate-600 mt-1">리로스쿨 <b>알림신청 → 결석신고서/체험학습 → 인쇄 →</b> [인쇄 대상을 선택하세요.]에서 <b>[신청서]만 체크 → PDF로 저장</b></span>
-      <span class="flex flex-wrap items-center gap-x-3 mt-1">
-        <span id="pdfName" class="text-base text-slate-500">파일을 선택하거나 이 영역에 드래그하세요</span>
-        <button id="pdfClear" type="button" class="hidden text-base text-blue-600 hover:underline">제거</button>
+  <!-- 입력: 대조할 두 서류를 좌우에 배치 -->
+  <section id="inputSec" class="grid gap-3 md:grid-cols-[1fr_auto_1fr]">
+    <label id="pdfDrop" class="flex flex-col rounded-lg border-2 p-5 cursor-pointer transition-colors focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-ink border-dashed border-rule-strong bg-sheet hover:border-ink">
+      <span class="flex items-baseline justify-between gap-3">
+        <span class="text-lg font-semibold">신고서 PDF</span>
+        <span class="text-base text-muted">리로스쿨</span>
+      </span>
+      <span class="mt-2 text-base text-muted leading-relaxed">알림신청 → 결석신고서/체험학습 → 인쇄 → [인쇄 대상을 선택하세요.]에서 <b class="font-semibold text-ink">[신청서]만 체크</b> → PDF로 저장</span>
+      <span class="mt-auto pt-4">
+        <span class="flex flex-wrap items-center gap-x-3 border-t border-dashed border-rule pt-3">
+          <span id="pdfName" class="text-base font-medium">파일을 선택하거나 이 영역에 드래그하세요</span>
+          <button id="pdfClear" type="button" class="hidden text-base underline underline-offset-2 hover:text-seal">제거</button>
+        </span>
       </span>
       <input id="pdfInput" type="file" accept=".pdf" class="sr-only">
     </label>
-    <label id="xlsxDrop" class="block bg-white rounded-xl border-2 border-dashed border-slate-300 p-5 cursor-pointer hover:border-blue-400 focus-within:ring-2 focus-within:ring-blue-300">
-      <span class="block text-lg font-semibold">② NEIS 월별 출결 현황 엑셀</span>
-      <span class="block text-base text-slate-600 mt-1">NEIS <b>학급담임 → 출결현황및통계 → 학급별출결현황 →</b> <b>[인정내역 포함] 체크 → [월별 출결현황] → [엑셀다운로드]</b> 버튼 클릭 → <b>[엑셀]</b> 확인</span>
-      <span class="flex flex-wrap items-center gap-x-3 mt-1">
-        <span id="xlsxName" class="text-base text-slate-500">파일을 선택하거나 이 영역에 드래그하세요</span>
-        <button id="xlsxClear" type="button" class="hidden text-base text-blue-600 hover:underline">제거</button>
+    <div aria-hidden="true" class="hidden md:flex items-center px-1 text-2xl text-rule-strong">⇄</div>
+    <label id="xlsxDrop" class="flex flex-col rounded-lg border-2 p-5 cursor-pointer transition-colors focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-ink border-dashed border-rule-strong bg-sheet hover:border-ink">
+      <span class="flex items-baseline justify-between gap-3">
+        <span class="text-lg font-semibold">NEIS 월별 출결 현황</span>
+        <span class="text-base text-muted">엑셀</span>
+      </span>
+      <span class="mt-2 text-base text-muted leading-relaxed">학급담임 → 출결현황및통계 → 학급별출결현황 → <b class="font-semibold text-ink">[인정내역 포함] 체크</b> → [월별 출결현황] → [엑셀다운로드] → [엑셀] 확인</span>
+      <span class="mt-auto pt-4">
+        <span class="flex flex-wrap items-center gap-x-3 border-t border-dashed border-rule pt-3">
+          <span id="xlsxName" class="text-base font-medium">파일을 선택하거나 이 영역에 드래그하세요</span>
+          <button id="xlsxClear" type="button" class="hidden text-base underline underline-offset-2 hover:text-seal">제거</button>
+        </span>
       </span>
       <input id="xlsxInput" type="file" accept=".xlsx,.xls" class="sr-only">
     </label>
   </section>
-  <!-- 대조 후에는 입력 칸 대신 한 줄 요약 -->
-  <div id="fileBar" class="hidden flex flex-wrap items-center gap-x-4 gap-y-1 bg-white rounded-xl border border-slate-200 px-4 py-3 text-base">
-    <span>① <b id="barPdf"></b></span>
-    <span>② <b id="barXlsx"></b></span>
-    <button id="reselect" type="button" class="text-blue-600 hover:underline">파일 재선택</button>
-    <span class="text-slate-500">이 화면에 파일을 드래그해도 교체됩니다</span>
+  <!-- 대조 후에는 입력 칸 대신 1행 요약 -->
+  <div id="fileBar" class="hidden flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg border border-rule bg-sheet px-4 py-3 text-base">
+    <span class="text-muted">신고서 <b id="barPdf" class="ml-1 font-semibold text-ink"></b></span>
+    <span class="text-muted">NEIS <b id="barXlsx" class="ml-1 font-semibold text-ink"></b></span>
+    <span class="ml-auto flex flex-wrap items-center gap-x-3">
+      <span class="text-muted">화면에 파일을 드래그해도 교체됩니다</span>
+      <button id="reselect" type="button" class="font-semibold underline underline-offset-2 hover:text-seal">파일 재선택</button>
+    </span>
   </div>
 
-  <details class="bg-white rounded-xl border border-slate-200 p-4">
-    <summary class="text-base font-semibold cursor-pointer">휴업일 설정 (신고 기간의 수업일 산정 시 제외)</summary>
-    <p class="text-base text-slate-600 mt-2">공휴일·재량휴업일을 YYYY-MM-DD, YYYYMMDD, YYMMDD 형식으로 1행에 1개씩 입력하세요. 쉼표(,)로 구분해도 됩니다. 토·일요일은 자동 제외됩니다.</p>
-    <textarea id="holidays" rows="3" placeholder="2026-09-24&#10;20260925&#10;261009" class="mt-2 w-full rounded-lg border border-slate-300 p-2 text-base font-mono"></textarea>
+  <details class="rounded-lg border border-rule bg-sheet px-4 py-3">
+    <summary class="cursor-pointer text-base font-semibold">휴업일 설정 <span class="font-normal text-muted">(신고 기간의 수업일 산정 시 제외)</span></summary>
+    <p class="mt-2 text-base text-muted">공휴일·재량휴업일을 YYYY-MM-DD, YYYYMMDD, YYMMDD 형식으로 1행에 1개씩 입력하세요. 쉼표(,)로 구분해도 됩니다. 토·일요일은 자동 제외됩니다.</p>
+    <textarea id="holidays" rows="3" placeholder="2026-09-24&#10;20260925&#10;261009" class="mt-2 w-full rounded-md border border-rule bg-paper/60 p-2 text-base tabular-nums focus:border-ink focus:outline-none"></textarea>
   </details>
 
   <div class="flex flex-wrap items-center gap-3">
-    <button id="runBtn" disabled class="px-5 py-2.5 rounded-lg bg-blue-600 text-white text-base font-semibold disabled:bg-slate-300 hover:bg-blue-700">대조 시작</button>
-    <button id="exportBtn" disabled class="px-5 py-2.5 rounded-lg bg-emerald-600 text-white text-base font-semibold disabled:bg-slate-300 hover:bg-emerald-700">결과 엑셀 다운로드</button>
-    <div id="progress" class="hidden h-2 w-48 rounded-full bg-slate-200 overflow-hidden" role="progressbar" aria-label="PDF 분석 진행률" aria-valuemin="0" aria-valuemax="100">
-      <div id="progressBar" class="h-full bg-blue-600 transition-all" style="width: 0%"></div>
+    <button id="runBtn" disabled class="rounded-md bg-ink px-5 py-2.5 text-base font-semibold text-white hover:bg-ink-soft disabled:bg-rule disabled:text-muted">대조 시작</button>
+    <button id="exportBtn" disabled class="rounded-md border-2 border-ink px-5 py-2 text-base font-semibold hover:bg-ink hover:text-white disabled:border-rule disabled:text-muted disabled:hover:bg-transparent">결과 엑셀 다운로드</button>
+    <div id="progress" class="hidden h-1.5 w-48 rounded-full bg-rule overflow-hidden" role="progressbar" aria-label="PDF 분석 진행률" aria-valuemin="0" aria-valuemax="100">
+      <div id="progressBar" class="h-full bg-ink transition-all" style="width: 0%"></div>
     </div>
-    <span id="status" class="text-base text-slate-600"></span>
+    <span id="status" class="text-base text-muted" aria-live="polite"></span>
   </div>
 
   <!-- 결과 -->
   <section id="resultSec" class="hidden space-y-4">
-    <div id="cards" class="space-y-4"></div>
-    <div id="warnBox" class="hidden bg-amber-50 border border-amber-300 rounded-xl p-4 text-base"></div>
+    <div id="cards"></div>
+    <div id="warnBox" class="hidden rounded-lg border border-rule border-l-4 border-l-diff-fg bg-sheet p-4 text-base"></div>
 
     <!-- xl 이상: 표와 원본 패널이 화면 높이를 채우고 각자 안에서 스크롤 -->
     <div class="grid gap-4 xl:grid-cols-3">
-      <div class="xl:col-span-2 min-w-0 bg-white rounded-xl border border-slate-200 flex flex-col xl:h-[calc(100vh-2rem)]">
-        <div class="flex flex-wrap items-center gap-3 p-3 border-b border-slate-200 shrink-0">
-          <input id="search" type="search" placeholder="번호·성명 검색" class="rounded-lg border border-slate-300 px-3 py-1.5 text-base w-48">
-          <span id="filterLabel" class="text-base text-slate-600"></span>
-          <span id="keyHint" class="hidden md:inline text-base text-slate-400">↑↓ 행 이동 · Space 확인 완료</span>
-          <button id="clearFilter" class="text-base text-blue-600 hover:underline hidden">전체 보기</button>
+      <div class="xl:col-span-2 min-w-0 rounded-lg border border-rule bg-sheet flex flex-col xl:h-[calc(100vh-2rem)]">
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2.5 border-b border-rule shrink-0">
+          <input id="search" type="search" placeholder="번호·성명 검색" class="w-48 rounded-md border border-rule px-3 py-1.5 text-base focus:border-ink focus:outline-none">
+          <span id="filterLabel" class="text-base font-semibold"></span>
+          <button id="clearFilter" class="hidden text-base underline underline-offset-2 hover:text-seal">전체 보기</button>
+          <span id="keyHint" class="hidden md:inline ml-auto text-base text-muted"><kbd>↑</kbd> <kbd>↓</kbd> 행 이동 <span class="ml-3"><kbd>Space</kbd> 확인 완료</span></span>
         </div>
         <div class="overflow-auto max-h-[70vh] xl:max-h-none xl:flex-1 xl:min-h-0">
           <table class="w-full text-base">
-            <thead class="bg-slate-100 sticky top-0">
-              <tr class="text-left">
-                <th class="px-3 py-2 whitespace-nowrap">확인</th>
-                <th class="px-3 py-2 whitespace-nowrap">결과</th>
-                <th class="px-3 py-2 whitespace-nowrap">번호</th>
-                <th class="px-3 py-2 whitespace-nowrap">성명</th>
-                <th class="px-3 py-2 whitespace-nowrap">일자</th>
-                <th class="px-3 py-2 whitespace-nowrap">신고서</th>
-                <th class="px-3 py-2 whitespace-nowrap">쪽</th>
-                <th class="px-1 py-2"></th>
-                <th class="px-3 py-2 whitespace-nowrap">NEIS</th>
-                <th class="px-3 py-2 min-w-80">비고</th>
+            <thead class="sticky top-0 z-10 bg-paper text-muted">
+              <tr class="text-left [&>th]:border-b-[3px] [&>th]:border-double [&>th]:border-rule-strong [&>th]:px-3 [&>th]:py-2 [&>th]:font-semibold [&>th]:whitespace-nowrap">
+                <th>확인</th>
+                <th>결과</th>
+                <th>번호</th>
+                <th>성명</th>
+                <th>일자</th>
+                <th>신고서</th>
+                <th>쪽</th>
+                <th class="!px-1"></th>
+                <th>NEIS</th>
+                <th class="min-w-80">비고</th>
               </tr>
             </thead>
             <tbody id="tbody"></tbody>
@@ -96,21 +150,21 @@
       </div>
 
       <!-- xl 미만: 우측에서 열리는 서랍. xl 이상: 표 옆 고정 열 -->
-      <div id="backdrop" class="hidden fixed inset-0 z-30 bg-slate-900/40 xl:hidden"></div>
-      <aside id="detailPane" aria-label="신고서 원본" class="fixed inset-y-0 right-0 z-40 flex w-full max-w-xl min-w-0 flex-col bg-white shadow-2xl translate-x-full invisible transition-[transform,visibility] duration-200
-                    xl:static xl:z-auto xl:w-auto xl:max-w-none xl:translate-x-0 xl:visible xl:transition-none xl:shadow-none xl:rounded-xl xl:border xl:border-slate-200 xl:h-[calc(100vh-2rem)]">
-        <div class="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-200 shrink-0">
+      <div id="backdrop" class="hidden fixed inset-0 z-30 bg-ink/40 xl:hidden"></div>
+      <aside id="detailPane" aria-label="신고서 원본" class="fixed inset-y-0 right-0 z-40 flex w-full max-w-xl min-w-0 flex-col bg-sheet shadow-2xl translate-x-full invisible transition-[transform,visibility] duration-200
+                    xl:static xl:z-auto xl:w-auto xl:max-w-none xl:translate-x-0 xl:visible xl:transition-none xl:shadow-none xl:rounded-lg xl:border xl:border-rule xl:h-[calc(100vh-2rem)]">
+        <div class="flex items-center justify-between gap-3 px-4 py-3 border-b border-rule shrink-0">
           <h2 class="text-lg font-semibold">신고서 원본</h2>
           <span class="flex items-center gap-2">
-            <span id="pageLabel" class="rounded-full bg-slate-100 px-3 text-base text-slate-600">행을 클릭하세요</span>
-            <button id="closeDetail" type="button" aria-label="닫기" class="xl:hidden rounded-lg px-2 text-xl leading-none text-slate-500 hover:bg-slate-100">✕</button>
+            <span id="pageLabel" class="rounded-[3px] bg-paper px-2 text-base text-muted tabular-nums">행을 클릭하세요</span>
+            <button id="closeDetail" type="button" aria-label="닫기" class="xl:hidden rounded-md px-2 text-xl leading-none text-muted hover:bg-paper">✕</button>
           </span>
         </div>
         <div class="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">
           <div id="detail" class="space-y-4">
-            <p class="text-base text-slate-500">좌측 표에서 행을 클릭하면 신고서 내용과 원본 쪽이 이 영역에 표시됩니다.</p>
+            <p class="text-base text-muted">좌측 표에서 행을 클릭하면 신고서 내용과 원본 쪽이 이 영역에 표시됩니다.</p>
           </div>
-          <canvas id="pdfCanvas" class="hidden w-full h-auto rounded-lg border border-slate-200 shadow-sm"></canvas>
+          <canvas id="pdfCanvas" class="hidden w-full h-auto rounded-md border border-rule"></canvas>
         </div>
       </aside>
     </div>
@@ -410,27 +464,27 @@ function parseXlsx(buf) {
 
 /* ───────────── 대조 ───────────── */
 const STATUS = {
-  ok:     { label: '일치',           badge: 'bg-emerald-100 text-emerald-800', row: '',
+  ok:     { label: '일치',           badge: 'bg-ok-bg text-ok-fg',         row: '',
             desc: 'PDF와 NEIS의 구분/교시/사유가 모두 일치함' },
-  diff:   { label: '구분 불일치',    badge: 'bg-amber-100 text-amber-800',     row: 'bg-amber-50',
+  diff:   { label: '구분 불일치',    badge: 'bg-diff-bg text-diff-fg',     row: '',
             desc: '동일 일자의 출결 구분이 불일치함 (예: PDF 질병조퇴 ↔ NEIS 질병결석)' },
-  slot:   { label: '교시 불일치',    badge: 'bg-orange-100 text-orange-800',   row: 'bg-orange-50',
+  slot:   { label: '교시 불일치',    badge: 'bg-diff-bg text-diff-fg',     row: '',
             desc: '출결 구분은 동일하나 승인 교시 범위가 상이함 (예: PDF 조회~종례 ↔ NEIS 1교시~종례)' },
-  memo:   { label: '사유 불일치',    badge: 'bg-yellow-100 text-yellow-800',   row: 'bg-yellow-50',
+  memo:   { label: '사유 불일치',    badge: 'bg-diff-bg text-diff-fg',     row: '',
             desc: '구분·교시는 동일하나 사유가 상이함 (예: PDF 담임교사 확인 내용 ↔ NEIS 사유)' },
-  noPdf:  { label: '신고서 누락',    badge: 'bg-red-100 text-red-800',         row: 'bg-red-50',
+  noPdf:  { label: '신고서 누락',    badge: 'bg-miss-bg text-miss-fg',     row: '',
             desc: 'NEIS에 출결 기록이 있으나 PDF 신고서가 누락됨 (미인정·체험학습은 대조 제외로 분류)' },
-  noNeis: { label: 'NEIS 미입력',    badge: 'bg-violet-100 text-violet-800',   row: 'bg-violet-50',
+  noNeis: { label: 'NEIS 미입력',    badge: 'bg-miss-bg text-miss-fg',     row: '',
             desc: 'PDF 신고서는 존재하나 NEIS에 해당 일자 출결 기록이 미입력됨 (엑셀 범위 외 일자 포함)' },
-  exempt: { label: '별도서류·미인정', badge: 'bg-slate-200 text-slate-700',     row: 'text-slate-500',
+  exempt: { label: '별도서류·미인정', badge: 'bg-exempt-bg text-exempt-fg', row: 'text-muted',
             desc: '결석신고서 제출 대상 외 (NEIS 미인정 출결, 체험학습)' },
 };
 const FLAGS = {
-  name: { label: '성명 상이', badge: 'bg-sky-100 text-sky-800', test: r => r.nameDiff,
+  name: { label: '성명 상이', badge: 'bg-flag-bg text-flag-fg', test: r => r.nameDiff,
           desc: '번호·일자는 동일하나 성명이 상이함 (예: PDF 김○○ ↔ NEIS 이○○)' },
-  req:  { label: '신청≠승인 기간', badge: 'bg-pink-100 text-pink-800', test: r => r.reqDiff,
+  req:  { label: '신청≠승인 기간', badge: 'bg-flag-bg text-flag-fg', test: r => r.reqDiff,
           desc: 'PDF 내 학생 신청 기간과 교사 승인 기간이 상이함 (예: 학생 신청 0교시~종례 → 교사 승인 1교시~종례)' },
-  days: { label: '일수 오류', badge: 'bg-fuchsia-100 text-fuchsia-800', test: r => r.daysIssue,
+  days: { label: '일수 오류', badge: 'bg-flag-bg text-flag-fg', test: r => r.daysIssue,
           desc: 'PDF 기재 일수가 실제 수업일수와 상이함 (예: 3일간 ↔ 수업일 2일), 또는 기간 전체가 휴업일' },
 };
 // 카드 묶음: 대조 결과 / 신고서 내부 점검 / 대조 제외
@@ -532,17 +586,17 @@ const fmtSize = n => n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB`
 // 칸 모양: 드래그 중(파랑) / 등록됨(초록) / 비어 있음(회색 점선)
 function paintZone(kind, dragging = false) {
   const filled = !!state[kind + 'File'];
-  $(kind + 'Drop').className = 'block rounded-xl border-2 p-5 cursor-pointer focus-within:ring-2 focus-within:ring-blue-300 ' +
-    (dragging ? 'border-dashed border-blue-500 bg-blue-50'
-     : filled ? 'border-solid border-emerald-400 bg-emerald-50 hover:border-emerald-500'
-     : 'border-dashed border-slate-300 bg-white hover:border-blue-400');
+  $(kind + 'Drop').className = 'flex flex-col rounded-lg border-2 p-5 cursor-pointer transition-colors focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-ink ' +
+    (dragging ? 'border-dashed border-ink bg-marker/50'
+     : filled ? 'border-solid border-ok-fg bg-ok-bg'
+     : 'border-dashed border-rule-strong bg-sheet hover:border-ink');
 }
 function setFile(kind, file) {
   file = file || null;
   state[kind + 'File'] = file;
   const name = $(kind + 'Name');
   name.textContent = file ? `✓ ${file.name} (${fmtSize(file.size)})` : EMPTY_NAME;
-  name.className = 'text-base ' + (file ? 'font-semibold text-emerald-800' : 'text-slate-500');
+  name.className = 'text-base ' + (file ? 'font-semibold text-ok-fg' : 'font-medium');
   $(kind + 'Clear').classList.toggle('hidden', !file);
   if (!file) $(kind + 'Input').value = ''; // 같은 파일을 다시 선택해도 change가 발생하도록
   paintZone(kind);
@@ -626,7 +680,7 @@ async function run(pdfBuf, xlsxBuf) {
   setProgress(null);
   if (state.doc) state.doc.destroy();
   Object.assign(state, { doc, neis, records, filter: 'todo', selKey: null, checked: new Set() });
-  $('status').textContent = `완료 — NEIS ${neis.length}건, 신고서 ${records.length}장 / ${doc.numPages}쪽`;
+  $('status').textContent = `대조 완료: NEIS ${neis.length}건, 신고서 ${records.length}장 / ${doc.numPages}쪽`;
   clearDetail();
   renderWarnings(errors);
   recompute();
@@ -677,10 +731,10 @@ function countBy(results) {
   return c;
 }
 
-const ALL = { label: '전체', badge: 'bg-slate-100 text-slate-800', desc: '학생·일자별 대조 결과 전체' };
+const ALL = { label: '전체', badge: 'bg-paper text-ink', desc: '학생·일자별 대조 결과 전체' };
 // 확인 필요: 일치·대조 제외가 아니거나, 신고서 내부 점검 등 추가 표기가 1개 이상인 항목 (기본 필터)
 const needsCheck = r => !['ok', 'exempt'].includes(r.status) || Object.values(FLAGS).some(f => f.test(r));
-const TODO = { label: '확인 필요', badge: 'bg-red-100 text-red-800', test: needsCheck,
+const TODO = { label: '확인 필요', badge: 'bg-ink text-white', test: needsCheck,
                desc: '불일치·누락·미입력 항목 및 성명 상이·신고서 내부 점검 해당 항목 (일치·대조 제외 이외의 전 항목)' };
 const defOf = k => k === 'all' ? ALL : k === 'todo' ? TODO : STATUS[k] || FLAGS[k];
 
@@ -692,32 +746,44 @@ function renderCards() {
     const d = defOf(k);
     const count = k === 'all' ? state.results.length : STATUS[k] ? c[k] : state.results.filter(d.test).length;
     const active = k === 'all' ? !state.filter : state.filter === k;
-    const b = el('button', 'inline-flex items-center gap-2 rounded-full border bg-white pl-1 pr-3 py-1 text-base hover:border-blue-400 ' +
-      (active ? 'border-blue-500 ring-2 ring-blue-200' : 'border-slate-200'));
+    const b = el('button', 'inline-flex items-center gap-2 rounded-md border bg-sheet py-1 pl-1 pr-2.5 text-base ' +
+      (active ? 'border-ink ring-1 ring-ink' : 'border-rule hover:border-rule-strong'));
     b.type = 'button';
     b.title = d.desc;
     b.setAttribute('aria-pressed', active);
-    b.append(el('span', 'rounded-full px-2 ' + d.badge, d.label), el('span', 'font-bold', String(count)));
+    b.append(el('span', 'rounded-[3px] px-1.5 ' + d.badge, d.label), el('span', 'font-semibold tabular-nums', String(count)));
     b.onclick = () => setFilter(k === 'all' ? null : k);
     return b;
   };
-  const groups = el('div', 'bg-white rounded-xl border border-slate-200 p-3 space-y-2');
+  const groups = el('div', 'rounded-lg border border-rule bg-sheet p-4 space-y-2.5');
   const todoRows = state.results.filter(needsCheck), todo = todoRows.length;
   const done = todoRows.filter(r => state.checked.has(keyOf(r))).length;
-  const sum = el('div', 'flex flex-wrap items-baseline gap-x-3 pb-2 border-b border-slate-100');
-  sum.append(el('span', 'text-2xl font-bold ' + (todo ? 'text-red-700' : 'text-emerald-700'), todo ? `확인 필요 ${todo}건` : '확인 필요 항목 없음'),
-             el('span', 'text-base text-slate-500', (todo ? `확인 완료 ${done}건 · ` : '') + `전체 ${state.results.length}건`));
+  // 요약: 확인 필요 건수(명조) + 확인 완료 진척(인주색 막대)
+  const sum = el('div', 'flex flex-wrap items-end justify-between gap-x-6 gap-y-2 pb-3 border-b border-rule');
+  sum.append(el('h2', 'font-serif text-3xl font-bold ' + (todo ? 'text-ink' : 'text-ok-fg'), todo ? `확인 필요 ${todo}건` : '확인 필요 항목 없음'));
+  const meta = el('div', 'flex flex-wrap items-center gap-x-5 gap-y-1 text-base text-muted');
+  if (todo) {
+    const bar = el('span', 'inline-block h-1.5 w-32 overflow-hidden rounded-full bg-rule align-middle');
+    const fill = el('span', 'block h-full rounded-full bg-seal');
+    fill.style.width = `${Math.round(done / todo * 100)}%`;
+    bar.append(fill);
+    const prog = el('span', 'inline-flex items-center gap-2');
+    prog.append(el('span', '', `확인 완료 ${done} / ${todo}건`), bar);
+    meta.append(prog);
+  }
+  meta.append(el('span', '', `전체 ${state.results.length}건`));
+  sum.append(meta);
   groups.append(sum);
   for (const g of CARD_GROUPS) {
     const row = el('div', 'flex flex-col gap-1 sm:flex-row sm:items-start sm:gap-3');
-    const head = el('span', 'sm:w-40 shrink-0 sm:pt-1.5 text-base font-semibold text-slate-600', g.title);
+    const head = el('span', 'sm:w-40 shrink-0 sm:pt-1 text-base font-semibold text-muted', g.title);
     head.title = g.hint;
     const chips = el('div', 'flex flex-wrap gap-2');
     chips.append(...g.keys.map(chip));
     row.append(head, chips);
     groups.append(row);
   }
-  groups.append(el('p', 'text-base text-slate-500 border-t border-slate-100 pt-2 break-keep', defOf(state.filter || 'all').desc));
+  groups.append(el('p', 'text-base text-muted border-t border-rule pt-2.5', defOf(state.filter || 'all').desc));
   box.append(groups);
 }
 const matchFilter = (r, k) => STATUS[k] ? r.status === k : defOf(k).test(r);
@@ -727,10 +793,11 @@ function renderWarnings(errors) {
   w.replaceChildren();
   if (!errors.length) { w.classList.add('hidden'); return; }
   w.classList.remove('hidden');
-  w.append(el('div', 'font-semibold', `PDF 판독 실패 ${errors.length}쪽 (대조에서 제외됨) · 클릭하면 원본 표시`));
+  w.append(el('div', 'font-semibold text-diff-fg', `PDF 판독 실패 ${errors.length}쪽`),
+           el('p', 'text-muted', '아래 쪽은 대조에서 제외되었습니다. 쪽을 클릭하면 원본이 표시됩니다.'));
   const list = el('div', 'flex flex-wrap gap-2 mt-2');
   for (const e of errors) {
-    const b = el('button', 'rounded-lg border border-amber-300 bg-white px-2 py-0.5 text-base hover:border-amber-500', `${e.page}쪽: ${e.why}`);
+    const b = el('button', 'rounded-md border border-rule bg-paper px-2 py-0.5 text-base hover:border-ink', `${e.page}쪽: ${e.why}`);
     b.type = 'button';
     b.onclick = () => showFailedPage(e);
     list.append(b);
@@ -742,9 +809,9 @@ function showFailedPage(e) {
   const prev = state.visible.find(v => keyOf(v) === state.selKey);
   state.selKey = null;
   if (prev) state.rowEls.get(keyOf(prev)).className = rowClass(prev);
-  const box = el('div', 'rounded-lg border border-amber-200 bg-amber-50 p-3');
-  box.append(el('div', 'text-base font-semibold text-amber-800', `${e.page}쪽 판독 실패`),
-             el('div', 'text-base break-keep', `${e.why} — 이 쪽은 대조에서 제외되었으므로 원본을 직접 확인하세요.`));
+  const box = el('div', 'rounded-md border-l-4 border-diff-fg bg-diff-bg/60 p-3');
+  box.append(el('div', 'text-base font-semibold text-diff-fg', `${e.page}쪽 판독 실패`),
+             el('div', 'text-base', `${e.why}. 이 쪽은 대조에서 제외되었으므로 원본을 직접 확인하세요.`));
   $('detail').replaceChildren(box);
   openDetail(true);
   $('pdfCanvas').classList.remove('hidden');
@@ -760,14 +827,14 @@ function renderTable() {
   const rows = state.results.filter(r =>
     (!state.filter || matchFilter(r, state.filter)) &&
     (!q || String(r.num) === q || r.name.includes(q)));
-  $('filterLabel').textContent = (state.filter ? defOf(state.filter).label + ' · ' : '') + `${rows.length}건`;
+  $('filterLabel').textContent = (state.filter ? defOf(state.filter).label + ' ' : '') + `${rows.length}건`;
   $('clearFilter').classList.toggle('hidden', !state.filter);
   state.visible = rows;
   state.rowEls.clear();
   const tb = $('tbody');
   tb.replaceChildren();
   if (!rows.length) {
-    const td = el('td', 'px-3 py-6 text-center text-slate-500', state.filter === 'todo' && !q ? '확인이 필요한 항목이 없습니다' : '해당 항목 없음');
+    const td = el('td', 'px-3 py-10 text-center text-muted', state.filter === 'todo' && !q ? '확인이 필요한 항목이 없습니다' : '해당 항목 없음');
     td.colSpan = 10;
     const tr = el('tr');
     tr.append(td);
@@ -777,25 +844,25 @@ function renderTable() {
     const s = STATUS[r.status];
     const tr = el('tr', rowClass(r));
     state.rowEls.set(keyOf(r), tr);
-    const tdc = el('td', 'px-3 py-1.5');
-    const cb = el('input', 'h-4 w-4 align-middle cursor-pointer');
-    cb.type = 'checkbox';
-    cb.checked = state.checked.has(keyOf(r));
+    const tdc = el('td', 'stamp-cell px-3 py-1');
+    const cb = el('button', 'stamp', '확인');
+    cb.type = 'button';
     cb.setAttribute('aria-label', `${r.num}번 ${r.date} 확인 완료`);
+    paintStamp(cb, state.checked.has(keyOf(r)));
     cb.onclick = e => { e.stopPropagation(); toggleChecked(r); };
     tdc.append(cb);
     const td0 = el('td', 'px-3 py-1.5 whitespace-nowrap');
-    td0.append(el('span', 'inline-block rounded px-2 text-base ' + s.badge, s.label));
-    for (const f of Object.values(FLAGS)) if (f.test(r)) td0.append(el('span', 'inline-block rounded px-2 ml-1 text-base ' + f.badge, f.label));
+    td0.append(el('span', 'inline-block rounded-[3px] px-1.5 font-medium ' + s.badge, s.label));
+    for (const f of Object.values(FLAGS)) if (f.test(r)) td0.append(el('span', 'inline-block rounded-[3px] px-1.5 ml-1 font-medium ' + f.badge, f.label));
     tr.append(tdc, td0,
-      el('td', 'px-3 py-1.5', String(r.num)),
+      el('td', 'px-3 py-1.5 tabular-nums', String(r.num)),
       el('td', 'px-3 py-1.5 whitespace-nowrap', r.name),
-      el('td', 'px-3 py-1.5 whitespace-nowrap font-mono', r.date.slice(5)),
+      el('td', 'px-3 py-1.5 whitespace-nowrap tabular-nums', r.date.slice(5)),
       el('td', 'px-3 py-1.5 whitespace-nowrap', r.pdf ? `${r.pdf}${r.pdfSlot ? ` (${r.pdfSlot})` : ''}` : '—'),
-      el('td', 'px-3 py-1.5', r.pages.join(',')),
-      el('td', 'px-1 py-1.5 text-slate-400', '→'),
+      el('td', 'px-3 py-1.5 tabular-nums', r.pages.join(',')),
+      el('td', 'px-1 py-1.5 text-rule-strong', '→'),
       el('td', 'px-3 py-1.5 whitespace-nowrap', r.neis ? `${r.neis}${r.neisSlot ? ` (${r.neisSlot})` : ''}` : '—'),
-      el('td', 'px-3 py-1.5 min-w-80 break-keep', r.note));
+      el('td', 'px-3 py-1.5 min-w-80 text-muted', r.note));
     tr.onclick = () => select(r);
     tb.append(tr);
   }
@@ -805,25 +872,29 @@ const keyOf = r => `${r.num}|${r.date}`;
 // 선택된 행은 좌측 파란 띠 + 파란 배경
 function rowClass(r) {
   const sel = keyOf(r) === state.selKey;
-  return 'border-t border-slate-100 cursor-pointer ' +
-    (sel ? 'bg-blue-100 shadow-[inset_4px_0_0_#2563eb]' : 'hover:bg-blue-50 ' + STATUS[r.status].row) +
-    (state.checked.has(keyOf(r)) ? ' opacity-50' : '');
+  return 'border-b border-rule cursor-pointer ' +
+    (sel ? 'bg-marker shadow-[inset_3px_0_0_#1D2B3A]' : 'hover:bg-paper ' + STATUS[r.status].row) +
+    (state.checked.has(keyOf(r)) ? ' is-done' : '');
 }
 // 확인 완료 표기: 메모리에만 보관 (학생 정보이므로 브라우저 저장소에 남기지 않음)
 function toggleChecked(r) {
   const k = keyOf(r);
   if (!state.checked.delete(k)) state.checked.add(k);
   const tr = state.rowEls.get(k);
-  if (tr) { tr.className = rowClass(r); tr.querySelector('input[type=checkbox]').checked = state.checked.has(k); }
+  if (tr) { tr.className = rowClass(r); paintStamp(tr.querySelector('.stamp'), state.checked.has(k)); }
   renderCards();
   if (k === state.selKey) paintChk(k);
+}
+function paintStamp(b, on) {
+  b.classList.toggle('is-on', on);
+  b.setAttribute('aria-pressed', on);
 }
 function paintChk(k) {
   const b = $('detailChk'), on = state.checked.has(k);
   if (!b) return;
-  b.className = 'rounded-lg border px-3 py-1 text-base ' +
-    (on ? 'border-emerald-400 bg-emerald-50 text-emerald-800' : 'border-slate-300 hover:border-blue-400');
-  b.textContent = on ? '✓ 확인 완료' : '확인 완료 표기';
+  b.setAttribute('aria-pressed', on);
+  b.querySelector('.stamp').classList.toggle('is-on', on);
+  b.lastChild.textContent = on ? '확인 완료' : '확인 완료 표기';
 }
 function select(r) {
   const prev = state.visible.find(v => keyOf(v) === state.selKey);
@@ -865,7 +936,7 @@ $('closeDetail').onclick = $('backdrop').onclick = () => openDetail(false);
 function clearDetail() {
   openDetail(false);
   cancelRender();
-  $('detail').replaceChildren(el('p', 'text-base text-slate-500', '좌측 표에서 행을 클릭하면 신고서 내용과 원본 쪽이 이 영역에 표시됩니다.'));
+  $('detail').replaceChildren(el('p', 'text-base text-muted', '좌측 표에서 행을 클릭하면 신고서 내용과 원본 쪽이 이 영역에 표시됩니다.'));
   $('pageLabel').textContent = '행을 클릭하세요';
   $('pdfCanvas').classList.add('hidden');
 }
@@ -877,11 +948,14 @@ function showDetail(r) {
   // 학생 · 날짜 · 결과
   const head = el('div', 'space-y-2');
   const who = el('div', 'flex flex-wrap items-baseline gap-x-3');
-  who.append(el('span', 'text-xl font-bold', `${r.num}번 ${r.name}`), el('span', 'text-base text-slate-500 font-mono', r.date));
+  who.append(el('span', 'text-xl font-bold', `${r.num}번 ${r.name}`), el('span', 'text-base text-muted tabular-nums', r.date));
   const badges = el('div', 'flex flex-wrap gap-1');
-  badges.append(el('span', 'rounded px-2 text-base ' + s.badge, s.label));
-  for (const f of Object.values(FLAGS)) if (f.test(r)) badges.append(el('span', 'rounded px-2 text-base ' + f.badge, f.label));
-  const chk = el('button');
+  badges.append(el('span', 'rounded-[3px] px-1.5 font-medium ' + s.badge, s.label));
+  for (const f of Object.values(FLAGS)) if (f.test(r)) badges.append(el('span', 'rounded-[3px] px-1.5 font-medium ' + f.badge, f.label));
+  const chk = el('button', 'inline-flex items-center gap-2 rounded-md py-0.5 pr-2 text-base font-semibold hover:bg-paper');
+  const seal = el('span', 'stamp', '확인');
+  seal.setAttribute('aria-hidden', 'true');
+  chk.append(seal, document.createTextNode(''));
   chk.id = 'detailChk';
   chk.type = 'button';
   chk.onclick = () => toggleChecked(r);
@@ -890,22 +964,22 @@ function showDetail(r) {
   d.append(head);
 
   // 신고서(PDF) ↔ NEIS 항목별 대조. 불일치로 판정된 항목만 강조
-  const cmp = el('div', 'rounded-lg border border-slate-200 divide-y divide-slate-200');
-  const cols = el('div', 'grid grid-cols-2 gap-3 px-3 py-2 bg-slate-100 rounded-t-lg font-semibold');
+  const cmp = el('div', 'rounded-md border border-rule divide-y divide-rule');
+  const cols = el('div', 'grid grid-cols-2 gap-3 px-3 py-2 bg-paper rounded-t-md font-semibold text-muted');
   cols.append(el('div', '', '신고서 (PDF)'), el('div', '', 'NEIS'));
   cmp.append(cols);
   const cell = (v, sub) => {
-    const c = el('div', 'min-w-0 break-keep');
-    if (!v) { c.append(el('span', 'text-slate-400', '—')); return c; }
+    const c = el('div', 'min-w-0');
+    if (!v) { c.append(el('span', 'text-rule-strong', '—')); return c; }
     c.append(el('div', 'leading-relaxed', v));
-    if (sub) c.append(el('div', 'text-base text-slate-500', sub));
+    if (sub) c.append(el('div', 'text-base text-muted', sub));
     return c;
   };
   const row = (label, a, b, bad, aSub, bSub) => {
-    const w = el('div', 'px-3 py-2 ' + (bad ? 'bg-amber-50' : ''));
-    const h = el('div', 'flex items-center gap-2 text-base text-slate-500 mb-0.5');
+    const w = el('div', 'px-3 py-2 ' + (bad ? 'bg-diff-bg/60 shadow-[inset_3px_0_0_#8A5300]' : ''));
+    const h = el('div', 'flex items-center gap-2 text-base text-muted mb-0.5');
     h.append(el('span', '', label));
-    if (bad) h.append(el('span', 'rounded px-2 bg-amber-200 text-amber-900', '불일치'));
+    if (bad) h.append(el('span', 'rounded-[3px] px-1.5 font-semibold text-diff-fg', '불일치'));
     const g = el('div', 'grid grid-cols-2 gap-3 text-base');
     g.append(cell(a, aSub), cell(b, bSub));
     w.append(h, g);
@@ -915,28 +989,28 @@ function showDetail(r) {
   row('일자', r.pdfPeriod, r.neis ? r.date : '');
   row('구분', r.pdf, r.neis, r.status === 'diff');
   row('교시', r.pdfSlot, r.neisSlot, r.status === 'slot', '', r.neisPeriods.replace(/,/g, ', '));
-  row('사유 · 신고서는 담임 확인 내용', r.pdfConfirm, r.neisMemo, r.status === 'memo');
+  row('사유 (신고서는 담임 확인 내용)', r.pdfConfirm, r.neisMemo, r.status === 'memo');
   d.append(cmp);
 
   // NEIS 미입력은 공휴일·재량휴업일이 원인인 경우가 많으므로 바로 휴업일로 지정할 수 있게 함
   if (r.status === 'noNeis') {
-    const h = el('div', 'flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2');
-    const b = el('button', 'rounded-lg bg-violet-600 px-3 py-1 text-base font-semibold text-white hover:bg-violet-700', `${r.date} 휴업일 지정`);
+    const h = el('div', 'flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-rule bg-paper px-3 py-2');
+    const b = el('button', 'rounded-md bg-ink px-3 py-1 text-base font-semibold text-white hover:bg-ink-soft', `${r.date} 휴업일 지정`);
     b.type = 'button';
     b.onclick = () => addHoliday(r.date);
-    h.append(b, el('span', 'text-base text-slate-600', '공휴일·재량휴업일이면 지정하여 대조에서 제외합니다'));
+    h.append(b, el('span', 'text-base text-muted', '공휴일·재량휴업일이면 지정하여 대조에서 제외합니다'));
     d.append(h);
   }
 
   // 학생이 쓴 사유는 대조 대상이 아니므로 참고로만 표시
-  const memo = el('div', 'rounded-lg bg-slate-50 px-3 py-2');
-  memo.append(el('div', 'text-base text-slate-500', '참고 · 학생 작성 사유 (신고서)'),
-              el('div', 'text-base leading-relaxed break-keep', r.pdfMemo || '—'));
+  const memo = el('div', 'rounded-md bg-paper px-3 py-2');
+  memo.append(el('div', 'text-base text-muted', '참고: 학생 작성 사유 (신고서)'),
+              el('div', 'text-base leading-relaxed', r.pdfMemo || '—'));
   d.append(memo);
 
   if (r.note) {
-    const n = el('div', 'rounded-lg border border-amber-200 bg-amber-50 p-3');
-    n.append(el('div', 'text-base font-semibold text-amber-800', '비고'), el('div', 'text-base break-keep', r.note));
+    const n = el('div', 'rounded-md border-l-4 border-diff-fg bg-diff-bg/60 p-3');
+    n.append(el('div', 'text-base font-semibold text-diff-fg', '비고'), el('div', 'text-base', r.note));
     d.append(n);
   }
 
