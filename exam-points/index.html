@@ -141,7 +141,7 @@ tailwind.config = {
         <h2 class="text-lg font-semibold">후보</h2>
         <span id="status" class="text-sm text-muted" aria-live="polite"></span>
       </div>
-      <ol id="cands" class="space-y-2"></ol>
+      <ol id="cands" class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-1"></ol>
     </div>
 
     <div class="min-w-0 space-y-4">
@@ -375,6 +375,7 @@ function miniBars(sol, height = 28) {
 
 function renderCands() {
   const ol = $('cands');
+  const step = state.result.options.step;
   ol.replaceChildren();
   state.result.solutions.forEach((s, i) => {
     const li = el('li');
@@ -384,7 +385,7 @@ function renderCands() {
     btn.setAttribute('aria-pressed', i === state.selected);
     const head = el('div', 'flex items-baseline justify-between gap-2');
     head.append(el('span', 'font-semibold', `${s.rank}안`));
-    head.append(el('span', 'text-sm text-muted tabular-nums', `${s.max}~${s.min}점`));
+    head.append(el('span', 'text-sm text-muted tabular-nums', `${fmt(s.min, step)}~${fmt(s.max, step)}점`));
     btn.append(head);
     btn.append(el('div', 'text-sm tabular-nums', `배점 ${s.kinds}가지 · 최다 ${s.maxCount}문항` + (s.skipped ? ` · 건너뜀 ${s.skipped}` : '')));
     btn.append(miniBars(s));
@@ -408,7 +409,7 @@ function renderDetail() {
   const pairs = s.count * (s.count - 1) / 2;
 
   $('stats').replaceChildren(
-    stat('배점 종류', `${s.kinds}가지`, `${s.max}~${s.min}점`),
+    stat('배점 종류', `${s.kinds}가지`, `${fmt(s.min, step)}~${fmt(s.max, step)}점`),
     stat('최다 동일 배점', `${s.maxCount}문항`, '같은 배점을 받는 문항 수 최댓값'),
     stat('1문항 오답 시 점수', `${s.oneMiss}가지`, `틀린 문항 ${s.count}개 경우 중`),
     stat('2문항 오답 시 점수', `${s.twoMiss}가지`, `틀린 문항 ${pairs}쌍 경우 중`),
@@ -505,7 +506,7 @@ function renderCatalog() {
     const tr = el('tr', 'border-b border-rule cursor-pointer hover:bg-wash [&>td]:px-3 [&>td]:py-1.5');
     tr.tabIndex = 0;
     tr.append(el('td', 'font-semibold', `${e.count}문항`));
-    tr.append(el('td', '', `${s.min}~${s.max}점`));
+    tr.append(el('td', '', `${fmt(s.min, e.step)}~${fmt(s.max, e.step)}점`));
     tr.append(el('td', '', `${s.kinds}가지`));
     tr.append(el('td', '', `${s.maxCount}문항`));
     tr.append(el('td', '', e.solved.tiers.join('·')));

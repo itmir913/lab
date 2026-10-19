@@ -261,7 +261,7 @@
         if (r.error && !r.infeasible) return r;
         if (r.error) continue;
         r.relaxed = [];
-        if (w) r.relaxed.push(`배점 범위를 ${min}~${max}점으로 넓혔습니다.`);
+        if (w) r.relaxed.push(`배점 범위를 ${min.toFixed(dec)}~${max.toFixed(dec)}점으로 넓혔습니다.`);
         if (maxPer !== opts.maxPer) r.relaxed.push('한 배점당 최대 문항 수 제한을 풀었습니다.');
         r.options = o;
         return r;
