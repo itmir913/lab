@@ -890,8 +890,8 @@ function paintStamp(b, on) {
   b.classList.toggle('is-on', on);
   b.setAttribute('aria-pressed', on);
 }
-function paintChk(k) {
-  const b = $('detailChk'), on = state.checked.has(k);
+function paintChk(k, b = $('detailChk')) {
+  const on = state.checked.has(k);
   if (!b) return;
   b.setAttribute('aria-pressed', on);
   b.querySelector('.stamp').classList.toggle('is-on', on);
@@ -961,7 +961,7 @@ function showDetail(r) {
   chk.type = 'button';
   chk.onclick = () => toggleChecked(r);
   head.append(who, badges, chk);
-  paintChk(keyOf(r));
+  paintChk(keyOf(r), chk);
   d.append(head);
 
   // 신고서(PDF) ↔ NEIS 항목별 대조. 불일치로 판정된 항목만 강조
