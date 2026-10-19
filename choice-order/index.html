@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>선지 정렬기</title>
+<title>선택지 정렬기</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
@@ -38,10 +38,12 @@ tailwind.config = {
   pre.paste { margin: 0; font-family: inherit; min-height: 6rem; }
   .paste:focus { border-color: #2B4560; outline: 2px solid #2B4560; outline-offset: -2px; }
   /* 고른 단추는 눌린 것처럼 남색으로 채운다 */
-  .seg { padding: .4rem .9rem; font-weight: 600; color: #2B4560; background: #fff; white-space: nowrap; }
+  /* 칸막이를 테두리가 아니라 칩 사이의 틈으로 그린다.
+     그래야 좁은 화면에서 칩이 두 줄로 접혀도 가로·세로 칸막이가 모두 남는다 */
+  .segbar { display: flex; flex-wrap: wrap; gap: 1px; background: #CDD6D1; }
+  .seg { flex: 1 1 auto; padding: .4rem .9rem; font-weight: 600; color: #2B4560; background: #fff; white-space: nowrap; }
   .seg:hover { background: #E6EDF4; }
   .seg[aria-pressed="true"] { background: #2B4560; color: #fff; }
-  .seg + .seg { border-left: 1px solid #CDD6D1; }
 </style>
 <script src="./sorter.js"></script>
 </head>
@@ -49,15 +51,15 @@ tailwind.config = {
 <main class="max-w-5xl mx-auto px-4 py-8 space-y-5">
 
   <header class="space-y-1">
-    <h1 class="text-2xl font-bold">선지 정렬기</h1>
-    <p class="text-muted">지필평가 원안지 선지나 보기를 붙여 넣으면, 자동으로 길이순이나 사전순으로 정렬합니다. 모든 입력 정보는 사용자의 브라우저 안에서만 처리하고 외부로 전송되지 않습니다.</p>
+    <h1 class="text-2xl font-bold">선택지 정렬기</h1>
+    <p class="text-muted">지필평가 원안지 선택지나 보기를 붙여 넣으면, 자동으로 길이순이나 사전순으로 정렬합니다. 모든 입력 정보는 사용자의 브라우저 안에서만 처리하고 외부로 전송되지 않습니다.</p>
   </header>
 
   <!-- 메뉴바: 정렬 기준과 번호 모양 -->
   <section aria-label="정렬 조건" class="space-y-3">
     <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
       <span class="font-semibold">정렬</span>
-      <div id="orderBar" role="group" aria-label="정렬 기준" class="flex flex-wrap overflow-hidden rounded border border-rule-strong">
+      <div id="orderBar" role="group" aria-label="정렬 기준" class="segbar overflow-hidden rounded border border-rule-strong">
         <button type="button" class="seg" data-val="orig" aria-pressed="false">원본 순서</button>
         <button type="button" class="seg" data-val="len" aria-pressed="true">길이순</button>
         <button type="button" class="seg" data-val="lenDesc" aria-pressed="false">길이 역순</button>
@@ -71,7 +73,7 @@ tailwind.config = {
 
     <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
       <span class="font-semibold">번호</span>
-      <div id="markBar" role="group" aria-label="번호 모양" class="flex flex-wrap overflow-hidden rounded border border-rule-strong">
+      <div id="markBar" role="group" aria-label="번호 모양" class="segbar overflow-hidden rounded border border-rule-strong">
         <button type="button" class="seg" data-val="keep" aria-pressed="true">원본 번호</button>
         <button type="button" class="seg" data-val="circle" aria-pressed="false">①②③</button>
         <button type="button" class="seg" data-val="kor" aria-pressed="false">ㄱㄴㄷ</button>
@@ -85,7 +87,7 @@ tailwind.config = {
 
     <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
       <span class="font-semibold">배치</span>
-      <div id="layoutBar" role="group" aria-label="답항 배치" class="flex flex-wrap overflow-hidden rounded border border-rule-strong">
+      <div id="layoutBar" role="group" aria-label="답항 배치" class="segbar overflow-hidden rounded border border-rule-strong">
         <button type="button" class="seg" data-val="keep" aria-pressed="true">원본 배치</button>
         <button type="button" class="seg" data-val="1" aria-pressed="false">1행답항</button>
         <button type="button" class="seg" data-val="2" aria-pressed="false">2행답항</button>
@@ -97,7 +99,7 @@ tailwind.config = {
 
     <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
       <span class="font-semibold">구분자</span>
-      <div id="sepBar" role="group" aria-label="선지 사이 구분자" class="flex flex-wrap overflow-hidden rounded border border-rule-strong">
+      <div id="sepBar" role="group" aria-label="선택지 사이 구분자" class="segbar overflow-hidden rounded border border-rule-strong">
         <button type="button" class="seg" data-val="keep" aria-pressed="false">원본 구분자</button>
         <button type="button" class="seg" data-val="sp1" aria-pressed="false">공백 1칸</button>
         <button type="button" class="seg" data-val="tab" aria-pressed="true">탭</button>
@@ -110,8 +112,8 @@ tailwind.config = {
     <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
       <span class="font-semibold">옵션</span>
       <div class="flex flex-wrap items-center gap-x-5 gap-y-2">
-        <label class="flex items-center gap-2"><input id="optTrim" type="checkbox" checked class="h-4 w-4 accent-head"> 선지 앞뒤 공백 다듬기</label>
-        <label class="flex items-center gap-2"><input id="optJoin" type="checkbox" checked class="h-4 w-4 accent-head"> 쪼개진 선지 한 줄로 합치기</label>
+        <label class="flex items-center gap-2"><input id="optTrim" type="checkbox" checked class="h-4 w-4 accent-head"> 선택지 앞뒤 공백 다듬기</label>
+        <label class="flex items-center gap-2"><input id="optJoin" type="checkbox" checked class="h-4 w-4 accent-head"> 쪼개진 선택지 한 줄로 합치기</label>
         <label class="flex items-center gap-2"><input id="optNoSpace" type="checkbox" class="h-4 w-4 accent-head"> 길이 셀 때 공백 빼기</label>
       </div>
     </div>
@@ -127,7 +129,7 @@ tailwind.config = {
         <button id="clearBtn" type="button" class="rounded border border-rule-strong px-3 py-1.5 font-semibold text-head hover:bg-head-soft">비우기</button>
       </span>
     </div>
-    <textarea id="input" class="paste" spellcheck="false" aria-label="선지 붙여 넣기"
+    <textarea id="input" class="paste" spellcheck="false" aria-label="선택지 붙여 넣기"
       placeholder="예:&#10;① A&#9;② B&#9;③ C&#9;④ D&#9;⑤ E"></textarea>
   </section>
 
@@ -150,7 +152,7 @@ tailwind.config = {
         <thead>
           <tr class="bg-head text-white [&>th]:border [&>th]:border-head [&>th]:px-3 [&>th]:py-2 [&>th]:font-semibold">
             <th class="w-16 whitespace-nowrap">번호</th>
-            <th>선지</th>
+            <th>선택지</th>
             <th class="w-24 whitespace-nowrap">글자 수</th>
             <th class="w-24 whitespace-nowrap">본래 자리</th>
           </tr>
@@ -158,7 +160,7 @@ tailwind.config = {
         <tbody id="tbody"></tbody>
       </table>
     </div>
-    <p class="text-muted"><span id="rowMsg" aria-live="polite">표의 줄을 누르면 그 선지만 복사합니다.</span></p>
+    <p class="text-muted"><span id="rowMsg" aria-live="polite">표의 줄을 누르면 그 선택지만 복사합니다.</span></p>
   </section>
 </main>
 
@@ -188,13 +190,13 @@ function render() {
 
   if (!r.ok) {
     $('resultSec').classList.add('hidden');
-    err.textContent = '선지를 두 개 이상 찾지 못했습니다. 번호가 붙은 선지나 줄마다 하나씩 적은 글을 붙여 넣어 주세요.';
+    err.textContent = '선택지를 두 개 이상 찾지 못했습니다. 번호가 붙은 선택지나 줄마다 하나씩 적은 글을 붙여 넣어 주세요.';
     err.classList.remove('hidden');
     $('kindMsg').textContent = '';
     return;
   }
   err.classList.add('hidden');
-  $('kindMsg').textContent = r.kindName + ' · 선지 ' + r.items.length + '개';
+  $('kindMsg').textContent = r.kindName + ' · 선택지 ' + r.items.length + '개';
 
   // 머리말 묶음을 골랐는데 묶을 머리말이 없으면 그냥 길이순과 같아지므로 알려 준다
   const headBox = $('headMsg');
@@ -212,13 +214,13 @@ function render() {
   $('output').textContent = r.out;
   $('resultSec').classList.remove('hidden');
   $('copyMsg').textContent = '';
-  $('rowMsg').textContent = '표의 줄을 누르면 그 선지만 복사합니다.';
+  $('rowMsg').textContent = '표의 줄을 누르면 그 선택지만 복사합니다.';
 
   // 아래 표: 새 자리의 번호와 글자 수
   state.rowText = r.placed;
   $('tbody').innerHTML = r.placed.map((body, i) => {
     const from = r.picked[r.slots[i].slot];
-    return '<tr data-i="' + i + '" tabindex="0" title="눌러서 이 선지 복사" '
+    return '<tr data-i="' + i + '" tabindex="0" title="눌러서 이 선택지 복사" '
       + 'class="cursor-pointer hover:bg-head-soft [&>td]:border [&>td]:border-rule [&>td]:px-3 [&>td]:py-1.5 align-top">'
       + '<td class="text-center font-semibold">' + esc(r.markers[i] || (i + 1) + ')') + '</td>'
       + '<td class="whitespace-pre-line">' + esc(body) + '</td>'
@@ -257,15 +259,15 @@ $('optJoin').addEventListener('change', render);
 
 $('clearBtn').addEventListener('click', () => { $('input').value = ''; render(); $('input').focus(); });
 
-/* 손에 익히라고 두는 예시. 실제 시험지 선지가 아니라 이 도구에서 꾸며 낸 글이다 */
+/* 손에 익히라고 두는 예시. 실제 시험지 선택지가 아니라 이 도구에서 꾸며 낸 글이다 */
 const SAMPLES = [
-  // 한 줄에 다섯 선지 (1행답항), 탭으로 나뉜 것
+  // 한 줄에 다섯 선택지 (1행답항), 탭으로 나뉜 것
   '① 사과\t② 바나나\t③ 복숭아\t④ 블루베리\t⑤ 참외',
   // 두 줄에 나눈 답항 (2행답항)
   '① 동쪽으로 흐른다.\t② 서쪽으로 흐른다.\n'
   + '③ 남쪽으로 흐르다가 굽는다.\t④ 북쪽으로 흐르다가 바다로 든다.\n'
   + '⑤ 흐르지 않는다.',
-  // 머리말이 붙은 다섯 선지
+  // 머리말이 붙은 다섯 선택지
   '① (가) - 물의 온도가 높을수록 빨리 녹는다.\n'
   + '② (가) - 저어 주면 더 고르게 섞인다.\n'
   + '③ (나) - 알갱이가 작을수록 녹는 속도가 빨라진다.\n'
@@ -325,13 +327,13 @@ $('copyBtn').addEventListener('click', async () => {
     : '이 브라우저에서는 클립보드에 쓸 수 없습니다. 결과 칸을 직접 복사하세요.';
 });
 
-/* 표의 줄을 누르면 그 선지 한 개만 복사한다 */
+/* 표의 줄을 누르면 그 선택지 한 개만 복사한다 */
 async function copyRow(tr) {
   const text = state.rowText[Number(tr.dataset.i)];
   if (text === undefined) return;
   const done = await copyText(text);
   $('rowMsg').textContent = done
-    ? '이 선지를 복사했습니다: ' + text
+    ? '이 선택지를 복사했습니다: ' + text
     : '이 브라우저에서는 클립보드에 쓸 수 없습니다.';
 }
 
