@@ -93,6 +93,84 @@ for (const c of CASES) {
   check('(가)는 본문에 남는다', r.items.every(s => s.startsWith('(')), show(r.items[0]));
 }
 
+/* ───────────── 1-2. 번호 토큰을 하나하나 ─────────────
+   세 줄짜리 같은 글을 번호만 바꿔 가며 넣어, 그 유형으로 읽는지 본다 */
+{
+  const body = ['하나.', '둘이라네.', '셋이라고 한다.'];
+  const withMarks = ms => ms.map((m, i) => `${m} ${body[i]}`).join('\n');
+  const TOKENS = [
+    ['circle',  ['①', '②', '③']],
+    ['circleB', ['❶', '❷', '❸']],
+    ['circleB', ['➀', '➁', '➂']],
+    ['circleK', ['㉠', '㉡', '㉢']],
+    ['circleK', ['㉮', '㉯', '㉰']],
+    ['circleK', ['㈀', '㈁', '㈂']],
+    ['circleL', ['Ⓐ', 'Ⓑ', 'Ⓒ']],
+    ['circleL', ['ⓐ', 'ⓑ', 'ⓒ']],
+    ['parenN',  ['⑴', '⑵', '⑶']],
+    ['dotN',    ['⒈', '⒉', '⒊']],
+    ['roman',   ['Ⅰ.', 'Ⅱ.', 'Ⅲ.']],
+    ['korP',    ['(ㄱ)', '(ㄴ)', '(ㄷ)']],
+    ['hangul',  ['(가)', '(나)', '(다)']],
+    ['parenL',  ['(A)', '(B)', '(C)']],
+    ['paren',   ['(1)', '(2)', '(3)']],
+    ['kor',     ['ㄱ.', 'ㄴ.', 'ㄷ.']],
+    ['kor',     ['ㄱ)', 'ㄴ)', 'ㄷ)']],
+    ['num',     ['1.', '2.', '3.']],
+    ['num',     ['1)', '2)', '3)']],
+    ['latin',   ['A.', 'B.', 'C.']],
+    ['latin',   ['a)', 'b)', 'c)']],
+    ['hangulD', ['가.', '나.', '다.']],
+    ['bullet',  ['◦', '◦', '◦']],
+    ['bullet',  ['※', '※', '※']],
+    ['dash',    ['-', '-', '-']],
+    ['bareN',   ['1', '2', '3']],
+    ['bareL',   ['A', 'B', 'C']],
+    ['bareJ',   ['ㄱ', 'ㄴ', 'ㄷ']],
+    ['bareH',   ['가', '나', '다']],
+  ];
+  for (const [kind, ms] of TOKENS) {
+    const r = X.rearrange(withMarks(ms), { order: 'orig' });
+    check(`토큰 ${ms.join(' ')}`, r.ok && r.kindId === kind,
+      r.ok ? `${r.kindId} ≠ ${kind}` : '못 읽음');
+    if (r.ok) {
+      check(`토큰 ${ms.join(' ')}: 본문만 남는다`, r.items.join('|') === body.join('|'), show(r.items));
+      check(`토큰 ${ms.join(' ')}: 번호가 그대로다`, r.markers.join('|') === ms.join('|'), r.markers.join('|'));
+    }
+  }
+
+  // 한 줄에 늘어놓아도 가려낸다
+  for (const [kind, ms] of TOKENS) {
+    const one = ms.map((m, i) => `${m} ${body[i]}`).join('\t');
+    const r = X.rearrange(one, { order: 'orig' });
+    check(`토큰 ${ms.join(' ')}: 한 줄 답항`, r.ok && r.kindId === kind && r.items.length === 3,
+      r.ok ? r.kindId : '못 읽음');
+  }
+
+  // 번호가 아닌 것을 번호로 보지 않는다
+  const NOT = [
+    ['그냥 문장들', '세 변의 길이가 모두 같다.\n두 변의 길이가 같다.\n한 각이 직각이다.'],
+    ['…다.로 끝나는 문장', '물이 흐른다.\n바람이 분다.\n해가 진다.'],
+    ['차례가 안 맞는 한 글자', '사 하나\n랑 둘이다\n해 셋이라네'],
+    ['차례가 안 맞는 영문', 'Q 하나\nZ 둘이다\nM 셋이라네'],
+    ['글자 둘뿐', 'A 가\nB 나'],
+    ['연도가 적힌 글', '1945 해방이 되었다.\n1950 전쟁이 일어났다.'],
+  ];
+  for (const [name, text] of NOT) {
+    const r = X.rearrange(text, { order: 'orig' });
+    check(`${name}: 번호로 보지 않는다`, !r.ok || r.kindId === 'line',
+      r.ok ? `${r.kindId}로 읽음` : '');
+  }
+
+  // 줄 맨 앞의 번호가 본문 속 토큰을 이긴다
+  const mixed = X.rearrange('① (가) - 가 나 다 A B C 1 2 3\n② (나) - 라 마 바\n③ (다) - 사 아 자', { order: 'orig' });
+  check('본문에 토큰이 많아도 줄 앞 번호를 쓴다', mixed.kindId === 'circle', mixed.kindId);
+
+  // 차례가 이어지면 더 믿는다 (머리표보다 번호를 먼저 본다)
+  const both = X.rearrange('- 1. 하나\n- 2. 둘이다\n- 3. 셋이라네', { order: 'orig' });
+  check('차례가 이어지는 번호를 머리표보다 먼저 본다', both.kindId === 'dash' || both.kindId === 'num', both.kindId);
+}
+
 /* ───────────── 2. 손대지 않으면 글이 그대로 나온다 ───────────── */
 for (const c of CASES) {
   const r = X.rearrange(c.text, { order: 'orig', mark: 'keep', layout: 'keep', sep: 'keep', trim: false });

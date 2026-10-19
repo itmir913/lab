@@ -8,17 +8,65 @@
 })(typeof self !== 'undefined' ? self : this, function () {
 
 /* ───────────── 번호 유형 ─────────────
-   앞선 유형이 먼저 뽑히므로, 다른 글과 헷갈릴 일이 적은 것을 위에 둔다 */
+   앞선 유형이 먼저 뽑히므로, 다른 글과 헷갈릴 일이 적은 것을 위에 둔다.
+
+   ord(마디) ─ 그 번호가 몇째인지 (ㄱ→0, 다→2, C→2, 3→2). 모르면 null.
+   seq       ─ 번호가 차례대로 이어지는지 본다. 이어지면 번호로 더 믿는다.
+   needsSeq  ─ 본문과 헷갈리기 쉬운 유형. 차례가 이어질 때만 번호로 인정한다.
+               "가 나 다"처럼 표시가 없는 맨 토큰이나, 문장 끝의 "…다."와
+               모양이 같은 "가."가 여기 든다 */
+const JAMO_S   = 'ㄱㄴㄷㄹㅁㅂㅅㅇㅈㅊㅋㅌㅍㅎ';
+const GANADA_S = '가나다라마바사아자차카타파하';
+const at = (str, ch) => { const i = str.indexOf(ch); return i < 0 ? null : i; };
+const digit = t => { const n = parseInt(t.replace(/\D/g, ''), 10); return Number.isFinite(n) ? n - 1 : null; };
+const inRange = (lo, hi) => t => { const c = t.codePointAt(0); return c >= lo && c <= hi ? c - lo : null; };
+const letter = t => { const c = t.toUpperCase().codePointAt(0); return c >= 65 && c <= 90 ? c - 65 : null; };
+
 const KINDS = [
-  { id: 'circle', name: '①②③ 번호',    src: '[\\u2460-\\u2473\\u2780-\\u2789\\u2776-\\u277F]' },
-  { id: 'kor',    name: 'ㄱㄴㄷ 번호',   src: '[\\u3131-\\u314E]\\s*[.)]' },
-  { id: 'korP',   name: '(ㄱ)(ㄴ) 번호', src: '\\(\\s*[\\u3131-\\u314E]\\s*\\)' },
-  { id: 'hangul', name: '(가)(나) 번호', src: '\\(\\s*[가-힣]\\s*\\)' },
-  { id: 'bullet', name: '◦ 같은 머리표', src: '[\\u25E6\\u25CB\\u25CF\\u2022\\u00B7\\u2219\\u25AA\\u25AB\\u203B\\u25A0\\u25A1\\u2500]' },
-  { id: 'paren',  name: '(1)(2) 번호',   src: '\\(\\s*\\d{1,2}\\s*\\)' },
-  { id: 'num',    name: '1. 2. 번호',    src: '\\d{1,2}\\s*[.)]' },
-  { id: 'dash',   name: '- 머리표',      src: '[-\\u2013\\u2014]' },
+  // 번호로 쓰라고 만든 글자들 ─ 본문에 섞일 일이 없다
+  { id: 'circle',  name: '①②③ 번호',   src: '[\\u2460-\\u2473]', ord: inRange(0x2460, 0x2473) },
+  { id: 'circleB', name: '❶➀ 번호',     src: '[\\u2776-\\u277F\\u2780-\\u2789]',
+    ord: t => { const c = t.codePointAt(0); return c <= 0x277F ? (c - 0x2776) % 10 : (c - 0x2780) % 10; } },
+  { id: 'circleK', name: '㉠㉮ 번호',    src: '[\\u3260-\\u327B\\u3200-\\u321E]',
+    ord: t => { const c = t.codePointAt(0);
+      if (c >= 0x3200) return c <= 0x320D ? c - 0x3200 : c - 0x320E;  // ㈀는 ㄱ, ㈎는 가
+      return c <= 0x326D ? c - 0x3260 : c - 0x326E; } },              // ㉠는 ㄱ, ㉮는 가
+  { id: 'circleL', name: 'Ⓐⓐ 번호',     src: '[\\u24B6-\\u24E9]',
+    ord: t => { const c = t.codePointAt(0); return c <= 0x24CF ? c - 0x24B6 : c - 0x24D0; } },
+  { id: 'parenN',  name: '⑴⑵ 번호',     src: '[\\u2474-\\u2487]', ord: inRange(0x2474, 0x2487) },
+  { id: 'dotN',    name: '⒈⒉ 번호',     src: '[\\u2488-\\u249B]', ord: inRange(0x2488, 0x249B) },
+  { id: 'roman',   name: 'Ⅰ Ⅱ 번호',    src: '[\\u2160-\\u216B\\u2170-\\u217B]\\s*[.)]?',
+    ord: t => { const c = t.codePointAt(0); return c <= 0x216B ? c - 0x2160 : c - 0x2170; } },
+
+  // 괄호로 묶은 번호 ─ 괄호가 있어 본문과 갈린다
+  { id: 'korP',    name: '(ㄱ)(ㄴ) 번호', src: '\\(\\s*[\\u3131-\\u314E]\\s*\\)', ord: t => at(JAMO_S, t.replace(/[()\s]/g, '')) },
+  { id: 'hangul',  name: '(가)(나) 번호', src: '\\(\\s*[가-힣]\\s*\\)',          ord: t => at(GANADA_S, t.replace(/[()\s]/g, '')) },
+  { id: 'parenL',  name: '(A)(B) 번호',   src: '\\(\\s*[A-Za-z]\\s*\\)',         ord: t => letter(t.replace(/[()\s]/g, '')) },
+  { id: 'paren',   name: '(1)(2) 번호',   src: '\\(\\s*\\d{1,2}\\s*\\)',         ord: digit },
+
+  // 마침표나 닫는 괄호가 붙은 번호
+  { id: 'kor',     name: 'ㄱㄴㄷ 번호',   src: '[\\u3131-\\u314E]\\s*[.)]',      ord: t => at(JAMO_S, t[0]) },
+  { id: 'num',     name: '1. 2. 번호',    src: '\\d{1,2}\\s*[.)]',               ord: digit },
+  { id: 'latin',   name: 'A. B. 번호',    src: '[A-Za-z]\\s*[.)]',               ord: t => letter(t[0]), needsSeq: true },
+  { id: 'hangulD', name: '가. 나. 번호',  src: '[가-힣]\\s*[.)]',                ord: t => at(GANADA_S, t[0]), needsSeq: true },
+
+  // 머리표 ─ 차례가 없으니 모두 같은 것으로 본다
+  { id: 'bullet',  name: '◦ 같은 머리표', src: '[\\u25E6\\u25CB\\u25CF\\u2022\\u00B7\\u2219\\u25AA\\u25AB\\u203B\\u25A0\\u25A1\\u2500]' },
+  { id: 'dash',    name: '- 머리표',      src: '[-\\u2013\\u2014]' },
+
+  // 표시가 없는 맨 토큰 ─ 본문과 가장 헷갈리므로 차례가 이어질 때만 번호로 본다
+  { id: 'bareN',   name: '1 2 3 번호',    src: '\\d{1,2}(?=\\s|$)',              ord: digit,            needsSeq: true },
+  { id: 'bareL',   name: 'A B C 번호',    src: '[A-Za-z](?=\\s|$)',              ord: letter,           needsSeq: true },
+  { id: 'bareJ',   name: 'ㄱ ㄴ ㄷ 번호', src: '[\\u3131-\\u314E](?=\\s|$)',     ord: t => at(JAMO_S, t),   needsSeq: true },
+  { id: 'bareH',   name: '가 나 다 번호', src: '[가-힣](?=\\s|$)',               ord: t => at(GANADA_S, t), needsSeq: true },
 ];
+
+/* 번호가 1, 2, 3처럼 한 칸씩 이어지는가 (중간에서 시작해도 된다) */
+function isSequence(kind, hits) {
+  if (!kind.ord || hits.length < 2) return false;
+  const ords = hits.map(h => kind.ord(h.text));
+  return ords.every((v, i) => v !== null && (i === 0 || v === ords[i - 1] + 1));
+}
 
 /* 번호를 다시 매길 때 쓰는 글자 */
 const CIRCLE = [...'①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳'];
@@ -75,8 +123,12 @@ function parse(text, join) {
       }
     });
     if (hits.length < 2) continue;
-    // 줄 맨 앞에 놓인 번호가 많은 유형을 먼저 믿는다
-    const score = atLineStart * 1000 + hits.length;
+    const seq = isSequence(kind, hits);
+    // 본문과 헷갈리기 쉬운 유형은 번호가 차례대로 이어질 때만 번호로 본다
+    // 셋은 모여야 번호다. 글자 두 개가 나란한 것은 우연일 수 있다
+    if (kind.needsSeq && (!seq || hits.length < 3)) continue;
+    // 줄 맨 앞에 놓인 번호가 많은 유형을 먼저 믿고, 차례가 이어지면 조금 더 믿는다
+    const score = atLineStart * 1000 + (seq ? 500 : 0) + hits.length;
     if (!best || score > best.score) best = { kind, hits, score };
   }
 
