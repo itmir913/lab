@@ -129,6 +129,11 @@
       lockN += +c;
       lockT += u * +c;
     }
+    // 같은 배점은 상·중·하 경계를 넘을 수 없으므로, 한 배점의 문항 수는 가장 큰 난이도 구간을 넘을 수 없다
+    const widest = Math.max(...tiers);
+    for (const [u, c] of locked) {
+      if (c > widest) return fail(`${fmt(u)}점 ${c}문항은 난이도 한 구간(최대 ${widest}문항)보다 많습니다. 같은 배점은 상·중·하 경계를 넘을 수 없으니 문항 수를 줄이거나 난이도 비율을 바꾸세요.`);
+    }
     if (lockN > n) return fail(`고정한 문항 수의 합(${lockN})이 전체 문항 수(${n})보다 많습니다.`);
     if (lockT > T) return fail(`고정한 배점의 합(${fmt(lockT)}점)이 총점(${fmt(T)}점)을 넘습니다.`);
     if (lockN === n && lockT !== T) return fail(`모든 문항을 고정했는데 합이 ${fmt(lockT)}점이라 총점 ${fmt(T)}점과 다릅니다.`);

@@ -142,7 +142,7 @@ tailwind.config = {
 
   <!-- 결과 -->
   <section id="resultSec" class="hidden space-y-2" aria-label="배점표">
-    <div class="flex flex-wrap items-center gap-2">
+    <div id="navRow" class="flex flex-wrap items-center gap-2">
       <div class="flex items-center rounded border border-rule-strong">
         <button id="prevBtn" type="button" aria-label="배점 가지수 줄이기" class="px-3 py-1.5 text-lg leading-none hover:bg-wash disabled:text-rule disabled:hover:bg-transparent">◀</button>
         <span id="pickLabel" class="min-w-[14rem] border-x border-rule px-3 py-1.5 text-center font-semibold tabular-nums" aria-live="polite"></span>
@@ -163,7 +163,7 @@ tailwind.config = {
 
     <div id="lockBar" class="hidden flex flex-wrap items-center gap-2 text-sm"></div>
 
-    <div class="overflow-x-auto">
+    <div id="tableWrap" class="overflow-x-auto">
       <table class="w-full min-w-[30rem] border-collapse tabular-nums">
         <thead>
           <tr class="bg-head text-white [&>th]:border [&>th]:border-head [&>th]:px-3 [&>th]:py-2 [&>th]:font-semibold">
@@ -371,7 +371,7 @@ function renderLocks() {
     const chip = el('button', 'inline-flex items-center gap-1 rounded border border-warn-fg/40 bg-warn-bg px-2 py-0.5 tabular-nums hover:border-seal');
     chip.type = 'button';
     chip.title = '고정 해제';
-    chip.append(el('span', 'font-semibold', `${fmt(v, step)}점 × ${c}`), el('span', 'text-muted', '✕'));
+    chip.append(el('span', 'font-semibold', c ? `${fmt(v, step)}점 × ${c}` : `${fmt(v, step)}점 안 씀`), el('span', 'text-muted', '✕'));
     chip.addEventListener('click', () => setLock(v, null));
     bar.append(chip);
   }
@@ -485,6 +485,7 @@ async function run(stale = () => false) {
   state.view = want;
   $('errorBox').classList.add('hidden');
   $('resultSec').classList.remove('hidden');
+  for (const id of ['navRow', 'tableWrap', 'summary']) $(id).classList.remove('hidden');
   render();
   // 주소에 "몇 번째 안"이 있으면 거기까지 찾아 간다
   if (state.pendingAlt) {
@@ -503,6 +504,7 @@ function showError(msg) {
   $('relaxBox').classList.add('hidden');
   // 고정 때문에 해가 없을 수 있으니 고정 해제 줄은 남긴다
   $('resultSec').classList.toggle('hidden', !state.locks.length);
+  for (const id of ['navRow', 'tableWrap', 'summary']) $(id).classList.add('hidden');
   for (const id of ['tbody', 'tfoot']) $(id).replaceChildren();
   $('pickLabel').textContent = '해 없음';
   $('prevBtn').disabled = $('nextBtn').disabled = true;
@@ -571,7 +573,7 @@ function render() {
     if (r.tier) tier.append(el('span', 'rounded px-2 py-0.5 text-sm font-semibold ' + TIER_CLS[r.tier], r.tier));
     tr.append(lt,
       el('td', 'font-semibold', fmt(r.value, step)),
-      el('td', '', r.count),
+      countCell(r, step),
       el('td', '', fmt(r.subtotal, step)),
       el('td', r.gap != null && r.gap > step + 1e-9 ? 'text-warn-fg font-semibold' : 'text-muted', r.gap == null ? '' : fmt(r.gap, step)),
       tier);
@@ -586,8 +588,30 @@ function render() {
   if (e.onlyBest) $('pickLabel').textContent = `배점 ${e.kinds}가지 (최적)`;
   $('summary').textContent = `배점 ${s.kinds}가지 · 한 배점에 최다 ${s.maxCount}문항` +
     (two ? ` · 2문항씩 틀린 두 학생이 동점일 확률 ${pct(two.tie)}` : '') +
-    ' · 자물쇠를 누르면 그 배점·문항 수를 고정하고 나머지를 다시 계산합니다.';
+    ' · 문항 수를 고치거나 자물쇠를 누르면 그 줄을 고정하고 나머지를 다시 계산합니다 (0 = 그 배점 안 씀).';
   $('copyMsg').textContent = '';
+}
+
+// 문항 수 칸은 엑셀처럼 직접 고친다. 고친 수는 그 배점에 고정되고(0이면 그 배점을 쓰지 않음)
+// 나머지 문항·점수만 다시 계산한다. Enter나 다른 칸으로 옮길 때 반영된다
+function countCell(r, step) {
+  const td = el('td', '!p-0');
+  const input = el('input', 'cell !text-base' + (r.locked ? ' font-semibold' : ''));
+  input.type = 'number';
+  input.min = '0';
+  input.step = '1';
+  input.value = r.count;
+  input.setAttribute('aria-label', `${fmt(r.value, step)}점 문항 수`);
+  input.title = '고치면 이 배점의 문항 수로 고정하고 나머지를 다시 계산합니다';
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') input.blur(); });
+  input.addEventListener('change', () => {
+    const c = Number(input.value);
+    if (!Number.isInteger(c) || c < 0) { input.value = r.count; return; }
+    if (c === r.count && r.locked) return;
+    setLock(r.value, c);
+  });
+  td.append(input);
+  return td;
 }
 
 // ◀ ▶: 배점 가지수가 다른 안으로 넘긴다. 고른 가지수는 선택 상자와 주소에도 남는다
