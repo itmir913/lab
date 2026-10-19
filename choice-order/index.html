@@ -57,13 +57,13 @@ tailwind.config = {
     <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
       <span class="font-semibold">배열</span>
       <div id="orderBar" role="group" aria-label="배열 기준" class="flex flex-wrap overflow-hidden rounded border border-rule-strong">
+        <button type="button" class="seg" data-val="orig" aria-pressed="false">원본 순서</button>
         <button type="button" class="seg" data-val="len" aria-pressed="true">길이순</button>
         <button type="button" class="seg" data-val="lenDesc" aria-pressed="false">길이 역순</button>
         <button type="button" class="seg" data-val="abc" aria-pressed="false">사전순</button>
         <button type="button" class="seg" data-val="abcDesc" aria-pressed="false">사전 역순</button>
         <button type="button" class="seg" data-val="headLen" aria-pressed="false">머리말 묶음 → 길이순</button>
         <button type="button" class="seg" data-val="headLenDesc" aria-pressed="false">머리말 묶음 → 길이 역순</button>
-        <button type="button" class="seg" data-val="orig" aria-pressed="false">원본 순서</button>
       </div>
     </div>
     <p id="headMsg" class="hidden text-muted"></p>
@@ -94,6 +94,17 @@ tailwind.config = {
       </div>
     </div>
 
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+      <span class="font-semibold">구분자</span>
+      <div id="sepBar" role="group" aria-label="선지 사이 구분자" class="flex flex-wrap overflow-hidden rounded border border-rule-strong">
+        <button type="button" class="seg" data-val="keep" aria-pressed="true">원본 구분자</button>
+        <button type="button" class="seg" data-val="tab" aria-pressed="false">탭</button>
+        <button type="button" class="seg" data-val="tab2" aria-pressed="false">탭 2칸</button>
+        <button type="button" class="seg" data-val="sp2" aria-pressed="false">공백 2칸</button>
+        <button type="button" class="seg" data-val="sp4" aria-pressed="false">공백 4칸</button>
+      </div>
+    </div>
+
     <div class="flex flex-wrap items-center gap-x-5 gap-y-2 text-muted">
       <label class="flex items-center gap-2"><input id="optTrim" type="checkbox" checked class="h-4 w-4 accent-head"> 선지 앞뒤 공백 다듬기</label>
       <label class="flex items-center gap-2"><input id="optNoSpace" type="checkbox" class="h-4 w-4 accent-head"> 길이 셀 때 공백 빼기</label>
@@ -117,15 +128,15 @@ tailwind.config = {
   <div id="errorBox" class="hidden rounded border border-rule border-l-4 border-l-warn-fg bg-warn-bg/40 p-3"></div>
 
   <!-- 결과 -->
-  <section id="resultSec" class="hidden space-y-2" aria-label="배열한 결과">
+  <section id="resultSec" class="hidden space-y-2" aria-label="재배열한 결과">
     <div class="flex flex-wrap items-center gap-2">
-      <h2 class="font-semibold">배열한 결과</h2>
+      <h2 class="font-semibold">재배열한 결과</h2>
       <span class="ml-auto flex items-center gap-2">
         <span id="copyMsg" class="text-muted" aria-live="polite"></span>
         <button id="copyBtn" type="button" class="rounded bg-head px-3 py-1.5 font-semibold text-white hover:bg-ink">결과 복사</button>
       </span>
     </div>
-    <pre id="output" class="paste bg-wash" tabindex="0" aria-label="배열한 결과"></pre>
+    <pre id="output" class="paste bg-wash" tabindex="0" aria-label="재배열한 결과"></pre>
     <p class="text-muted">탭은 시험지처럼 일정한 칸(공백 16칸 자리)에서 끊기게 그렸습니다. 복사하면 탭은 탭 그대로 나가므로 한글·워드·엑셀에서 칸이 맞습니다.</p>
 
     <div class="overflow-x-auto">
@@ -305,7 +316,7 @@ function arrange(items, order, noSpace) {
 }
 
 /* ───────────── 결과 만들기 ───────────── */
-const state = { order: 'len', mark: 'keep', layout: 'keep', outText: '', rowText: [] };
+const state = { order: 'len', mark: 'keep', layout: 'keep', sep: 'keep', outText: '', rowText: [] };
 
 function render() {
   const text = $('input').value;
@@ -351,17 +362,21 @@ function render() {
 
   // 자리마다 번호를 새로 붙이고 본문만 바꿔 끼운다
   const markerAt = cell => state.mark === 'keep' ? cell.marker : markerOf(state.mark, cell.slot);
+  // 선지 사이를 무엇으로 띄울지. 원본 구분자면 붙여 넣은 글의 것을 그대로 쓴다
+  const SEP = { tab: '\t', tab2: '\t\t', sp2: '  ', sp4: '    ' };
+  const sepAfter = (cell, isLast) =>
+    state.sep === 'keep' || isLast ? cell.sep : SEP[state.sep];
   let out;
   if (state.layout === 'keep') {
     out = parsed.rows.map(row => {
       if (row.raw !== undefined) return row.raw;
       let line = row.prefix;
-      for (const cell of row.cells) {
+      row.cells.forEach((cell, k) => {
         const body = items[picked[cell.slot]];
         const marker = markerAt(cell);
         const gap = state.mark === 'keep' ? cell.gap : (marker === '' ? '' : (cell.gap || ' '));
-        line += marker + gap + body + cell.sep;
-      }
+        line += marker + gap + body + sepAfter(cell, k === row.cells.length - 1);
+      });
       return line;
     }).join('\n');
   } else {
@@ -378,7 +393,7 @@ function render() {
         const gap = marker === '' ? '' : (state.mark === 'keep' ? (cell.gap || ' ') : ' ');
         cells.push(marker + gap + items[picked[cell.slot]]);
       }
-      lines.push(cells.join('\t'));
+      lines.push(cells.join(state.sep === 'keep' ? SEP.tab : SEP[state.sep]));
     }
     out = lines.join('\n');
   }
@@ -425,6 +440,7 @@ function bindBar(barId, key) {
 bindBar('orderBar', 'order');
 bindBar('markBar', 'mark');
 bindBar('layoutBar', 'layout');
+bindBar('sepBar', 'sep');
 
 $('input').addEventListener('input', render);
 $('optTrim').addEventListener('change', render);
