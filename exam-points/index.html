@@ -150,9 +150,10 @@ tailwind.config = {
       <div class="rounded-lg border border-rule bg-sheet">
         <div class="flex flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2.5 border-b border-rule">
           <h2 id="detailTitle" class="text-lg font-semibold"></h2>
-          <span class="ml-auto flex items-center gap-3">
+          <span class="ml-auto flex flex-wrap items-center justify-end gap-2">
             <span id="copyMsg" class="text-sm text-muted" aria-live="polite"></span>
             <button id="copyBtn" type="button" class="rounded-md border-2 border-ink px-3 py-1 font-semibold hover:bg-ink hover:text-white">표 복사</button>
+            <button id="copyEachBtn" type="button" class="rounded-md border-2 border-ink px-3 py-1 font-semibold hover:bg-ink hover:text-white">문항별 복사</button>
           </span>
         </div>
         <div class="overflow-x-auto">
@@ -452,31 +453,91 @@ function renderDetail() {
   $('copyMsg').textContent = '';
 }
 
-// 엑셀에 바로 붙여 넣을 수 있게 탭으로 구분한다
-function toTsv(s, step) {
-  const lines = [['문항배점', '문항수', '배점계', '급간', '곤란도'].join('\t'),
-                 ['', s.count, fmt(s.total, step), '', ''].join('\t')];
-  for (const r of s.rows) {
-    lines.push([fmt(r.value, step), r.count, fmt(r.subtotal, step), r.gap == null ? '' : fmt(r.gap, step), r.tier].join('\t'));
-  }
-  return lines.join('\n');
+/* ───────────── 엑셀로 복사 ───────────── */
+// 표는 [[칸, …], …]이고 칸은 문자열(글자) 또는 { n: 숫자, d: 소수 자릿수 }.
+// 클립보드에 HTML 표와 탭 구분 글자를 함께 넣는다. 엑셀·구글 시트는 HTML을 읽어
+// 4.0이 4로 바뀌지 않게 숫자 서식을 지키고, 메모장 같은 곳에는 탭 구분 글자가 붙는다.
+const numCell = (n, d) => ({ n, d });
+const cellText = c => (c && typeof c === 'object' ? c.n.toFixed(c.d) : String(c ?? ''));
+const escHtml = t => t.replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]);
+
+function toTsv(table) {
+  return table.map(row => row.map(cellText).join('\t')).join('\r\n');
 }
 
-$('copyBtn').addEventListener('click', async () => {
-  const s = state.result.solutions[state.selected];
-  const text = toTsv(s, state.result.options.step);
+function toHtml(table) {
+  const td = (c, head) => {
+    const tag = head ? 'th' : 'td';
+    const base = 'border:1px solid #8FA39A;padding:2px 6px;';
+    if (c && typeof c === 'object') {
+      const f = c.d ? '0.' + '0'.repeat(c.d) : '0';
+      return `<${tag} style="${base}text-align:right;mso-number-format:'${f}'">${cellText(c)}</${tag}>`;
+    }
+    // 글자 칸은 엑셀이 날짜·숫자로 바꾸지 않게 텍스트 서식으로
+    return `<${tag} style="${base}mso-number-format:'\\@'${head ? ';background:#F4F5F7;font-weight:bold' : ''}">${escHtml(cellText(c))}</${tag}>`;
+  };
+  const rows = table.map((row, i) => '<tr>' + row.map(c => td(c, i === 0)).join('') + '</tr>').join('');
+  return '<html><head><meta charset="utf-8"></head><body><table style="border-collapse:collapse">' + rows + '</table></body></html>';
+}
+
+async function copyTable(table) {
+  const tsv = toTsv(table), html = toHtml(table);
   try {
-    await navigator.clipboard.writeText(text);
+    await navigator.clipboard.write([new ClipboardItem({
+      'text/html': new Blob([html], { type: 'text/html' }),
+      'text/plain': new Blob([tsv], { type: 'text/plain' }),
+    })]);
+    return;
   } catch (e) {
-    const ta = el('textarea');
-    ta.value = text;
-    document.body.append(ta);
-    ta.select();
-    document.execCommand('copy');
-    ta.remove();
+    // ClipboardItem이 없거나 막힌 브라우저: copy 이벤트에 두 형식을 직접 싣는다
   }
-  $('copyMsg').textContent = '복사했습니다. 엑셀에 붙여 넣으세요.';
-});
+  const onCopy = e => {
+    e.clipboardData.setData('text/html', html);
+    e.clipboardData.setData('text/plain', tsv);
+    e.preventDefault();
+  };
+  document.addEventListener('copy', onCopy);
+  try {
+    if (!document.execCommand('copy')) throw new Error('copy');
+  } finally {
+    document.removeEventListener('copy', onCopy);
+  }
+}
+
+// 화면의 배점표 그대로
+function summaryTable(s, step) {
+  const d = X.decimalsOf(step);
+  const out = [['배점', '문항 수', '배점계', '급간', '곤란도', '순번']];
+  for (const r of s.rows) {
+    out.push([numCell(r.value, d), numCell(r.count, 0), numCell(r.subtotal, d),
+              r.gap == null ? '' : numCell(r.gap, d), r.tier, r.from === r.to ? `${r.from}` : `${r.from}~${r.to}`]);
+  }
+  out.push(['합계', numCell(s.count, 0), numCell(s.total, d), '', '', '']);
+  return out;
+}
+
+// 문항 하나에 한 줄 (어려운 문항부터)
+function perQuestionTable(s, step) {
+  const d = X.decimalsOf(step);
+  const out = [['순번', '배점', '곤란도']];
+  for (const r of s.rows) {
+    for (let k = r.from; k <= r.to; k++) out.push([numCell(k, 0), numCell(r.value, d), r.tier]);
+  }
+  out.push(['합계', numCell(s.total, d), '']);
+  return out;
+}
+
+async function copyCurrent(build, label) {
+  const s = state.result.solutions[state.selected];
+  try {
+    await copyTable(build(s, state.result.options.step));
+    $('copyMsg').textContent = `${label}를 복사했습니다. 엑셀에 붙여 넣으세요.`;
+  } catch (e) {
+    $('copyMsg').textContent = '이 브라우저에서는 클립보드에 쓸 수 없습니다.';
+  }
+}
+$('copyBtn').addEventListener('click', () => copyCurrent(summaryTable, '배점표'));
+$('copyEachBtn').addEventListener('click', () => copyCurrent(perQuestionTable, '문항별 배점'));
 
 /* ───────────── 미리 계산한 추천표 ───────────── */
 async function loadPrecalc() {
