@@ -320,7 +320,6 @@
     renderWarnings(errors);
     recompute();
     $('resultSec').classList.remove('hidden');
-    $('exportBtn').disabled = false;
     showInputs(false);
   });
 })();

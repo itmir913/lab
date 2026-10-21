@@ -114,7 +114,7 @@ tailwind.config = {
   <div class="flex flex-wrap items-center gap-3">
     <button id="runBtn" disabled class="rounded-md bg-ink px-5 py-2.5 text-base font-semibold text-white hover:bg-ink-soft disabled:bg-rule disabled:text-muted">대조 시작</button>
     <button id="exportBtn" disabled class="rounded-md border-2 border-ink px-5 py-2 text-base font-semibold hover:bg-ink hover:text-white disabled:border-rule disabled:text-muted disabled:hover:bg-transparent">결과 엑셀 다운로드</button>
-    <button id="demoBtn" type="button" class="rounded-md border border-rule px-4 py-2 text-base font-semibold text-muted hover:border-ink hover:text-ink">예제 데모</button>
+    <button id="demoBtn" type="button" class="rounded-md border border-rule px-4 py-2 text-base font-semibold text-muted hover:border-ink hover:text-ink disabled:text-rule disabled:hover:border-rule disabled:hover:text-rule">예제 데모</button>
     <div id="progress" class="hidden h-1.5 w-48 rounded-full bg-rule overflow-hidden" role="progressbar" aria-label="PDF 분석 진행률" aria-valuemin="0" aria-valuemax="100">
       <div id="progressBar" class="h-full bg-ink transition-all" style="width: 0%"></div>
     </div>
@@ -636,7 +636,7 @@ function setFile(kind, file) {
   $(kind + 'Clear').classList.toggle('hidden', !file);
   if (!file) $(kind + 'Input').value = ''; // 같은 파일을 다시 선택해도 change가 발생하도록
   paintZone(kind);
-  updateRun();
+  updateButtons();
   if (file) scheduleRun();
 }
 $('pdfInput').addEventListener('change', e => setFile('pdf', e.target.files[0]));
@@ -649,7 +649,13 @@ for (const [id, p] of Object.entries(PROFILES)) $('profile').append(new Option(p
 const showProfileGuide = () => { $('profileGuide').innerHTML = PROFILES[$('profile').value].guide; };
 showProfileGuide();
 $('profile').addEventListener('change', () => { showProfileGuide(); scheduleRun(); });
-function updateRun() { $('runBtn').disabled = state.running || !(state.pdfFile && state.xlsxFile); }
+// 세 버튼 모두 상태에서 끌어온다: 대조 중에는 전부 잠그고, 내려받기는 결과가 있을 때만
+function updateButtons() {
+  const busy = state.running;
+  $('runBtn').disabled = busy || !(state.pdfFile && state.xlsxFile);
+  $('exportBtn').disabled = busy || !state.results.length;
+  $('demoBtn').disabled = busy;
+}
 
 // 끌어다 놓기: 어느 칸에 놓든 확장자로 PDF·엑셀을 가려 넣음 (두 파일을 한 번에 놓아도 됨)
 const fileKind = f => /\.pdf$/i.test(f.name) ? 'pdf' : /\.xlsx?$/i.test(f.name) ? 'xlsx' : null;
@@ -687,7 +693,7 @@ async function startRun() {
   if (!(state.pdfFile && state.xlsxFile)) return;
   if (state.running) { state.rerun = true; return; }
   state.running = true;
-  updateRun();
+  updateButtons();
   try {
     await run(await state.pdfFile.arrayBuffer(), await state.xlsxFile.arrayBuffer());
   } catch (err) {
@@ -695,7 +701,7 @@ async function startRun() {
   } finally {
     state.running = false;
     setProgress(null);
-    updateRun();
+    updateButtons();
     if (state.rerun) { state.rerun = false; startRun(); }
   }
 }
@@ -726,7 +732,6 @@ async function run(pdfBuf, xlsxBuf) {
   renderWarnings(errors);
   recompute();
   $('resultSec').classList.remove('hidden');
-  $('exportBtn').disabled = false;
   showInputs(false);
   return { neis: neis.length, pdf: records.length, pages: doc.numPages, errors: errors.length, counts: countBy(state.results) };
 }
@@ -739,6 +744,7 @@ function recompute() {
   state.results = compare(state.neis, state.records, parseHolidays($('holidays').value)).results;
   renderCards();
   renderTable();
+  updateButtons();
   if (state.selKey == null) return;
   let r = state.visible.find(v => keyOf(v) === state.selKey);
   if (!r && idx >= 0 && state.visible.length) r = state.visible[Math.min(idx, state.visible.length - 1)];
