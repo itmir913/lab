@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>출결 대조</title>
+<title>출결신고서 대조</title>
 <link rel="icon" href="https://luminousky.com/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="https://luminousky.com/apple-touch-icon.png">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
@@ -58,7 +58,7 @@ tailwind.config = {
 <main class="max-w-screen-2xl mx-auto p-4 space-y-4">
 
   <header class="max-w-3xl space-y-2">
-    <h1 class="text-title font-bold">출결 대조</h1>
+    <h1 class="text-title font-bold">출결신고서 ↔ NEIS 대조</h1>
     <p class="text-base text-muted leading-relaxed">전자출결 신고서(PDF)와 NEIS 월별 출결 현황(엑셀)을 대조합니다. 모든 처리는 이 브라우저 내에서만 수행되며, 파일은 외부로 전송·저장되지 않습니다.</p>
   </header>
 
@@ -79,7 +79,7 @@ tailwind.config = {
       </span>
       <input id="pdfInput" type="file" accept=".pdf" class="sr-only">
     </label>
-    <div aria-hidden="true" class="hidden md:flex items-center px-1 text-2xl text-rule-strong">⇄</div>
+    <div aria-hidden="true" class="hidden md:flex items-center px-1 text-2xl text-rule-strong">↔</div>
     <label id="xlsxDrop" for="xlsxInput" class="flex flex-col rounded-lg border-2 p-5 cursor-pointer transition-colors focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-ink border-dashed border-rule-strong bg-sheet hover:border-ink">
       <span class="flex items-baseline justify-between gap-3">
         <span class="text-lg font-semibold">NEIS 월별 출결 현황</span>
