@@ -114,6 +114,7 @@ tailwind.config = {
   <div class="flex flex-wrap items-center gap-3">
     <button id="runBtn" disabled class="rounded-md bg-ink px-5 py-2.5 text-base font-semibold text-white hover:bg-ink-soft disabled:bg-rule disabled:text-muted">대조 시작</button>
     <button id="exportBtn" disabled class="rounded-md border-2 border-ink px-5 py-2 text-base font-semibold hover:bg-ink hover:text-white disabled:border-rule disabled:text-muted disabled:hover:bg-transparent">결과 엑셀 다운로드</button>
+    <button id="demoBtn" type="button" class="rounded-md border border-rule px-4 py-2 text-base font-semibold text-muted hover:border-ink hover:text-ink">예제 데모</button>
     <div id="progress" class="hidden h-1.5 w-48 rounded-full bg-rule overflow-hidden" role="progressbar" aria-label="PDF 분석 진행률" aria-valuemin="0" aria-valuemax="100">
       <div id="progressBar" class="h-full bg-ink transition-all" style="width: 0%"></div>
     </div>
@@ -628,6 +629,7 @@ function paintZone(kind, dragging = false) {
 function setFile(kind, file) {
   file = file || null;
   state[kind + 'File'] = file;
+  state[kind + 'Label'] = file ? file.name : '';
   const name = $(kind + 'Name');
   name.textContent = file ? `✓ ${file.name} (${fmtSize(file.size)})` : EMPTY_NAME;
   name.className = 'text-base ' + (file ? 'font-semibold text-ok-fg' : 'font-medium');
@@ -757,8 +759,9 @@ function addHoliday(iso) {
 
 // 대조 후에는 입력 칸을 접고 파일명 1행만 표시
 function showInputs(show) {
-  $('barPdf').textContent = state.pdfFile ? state.pdfFile.name : '';
-  $('barXlsx').textContent = state.xlsxFile ? state.xlsxFile.name : '';
+  // 예제 데모는 파일이 없으므로 파일명 대신 데모 표기를 둔다
+  $('barPdf').textContent = state.pdfLabel || '';
+  $('barXlsx').textContent = state.xlsxLabel || '';
   $('inputSec').classList.toggle('hidden', !show);
   $('fileBar').classList.toggle('hidden', show);
 }
@@ -1102,5 +1105,7 @@ $('exportBtn').addEventListener('click', () => {
   XLSX.writeFile(wb, '출결대조결과.xlsx');
 });
 </script>
+<!-- 예제 데모: 위 스크립트의 compare()·renderTable() 등을 그대로 쓰므로 뒤에 둔다 -->
+<script src="demo-data.js"></script>
 </body>
 </html>
