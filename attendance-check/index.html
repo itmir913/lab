@@ -61,12 +61,13 @@ tailwind.config = {
 
   <!-- 입력: 대조할 두 서류를 좌우에 배치 -->
   <section id="inputSec" class="grid gap-3 md:grid-cols-[1fr_auto_1fr]">
-    <label id="pdfDrop" class="flex flex-col rounded-lg border-2 p-5 cursor-pointer transition-colors focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-ink border-dashed border-rule-strong bg-sheet hover:border-ink">
+    <!-- for: 안의 select가 아니라 파일 입력을 라벨 대상으로 -->
+    <label id="pdfDrop" for="pdfInput" class="flex flex-col rounded-lg border-2 p-5 cursor-pointer transition-colors focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-ink border-dashed border-rule-strong bg-sheet hover:border-ink">
       <span class="flex items-baseline justify-between gap-3">
         <span class="text-lg font-semibold">신고서 PDF</span>
-        <span class="text-base text-muted">리로스쿨</span>
+        <select id="profile" aria-label="신고서 서비스" class="rounded-md border border-rule bg-sheet px-2 py-0.5 text-base text-ink cursor-pointer hover:border-ink focus:border-ink focus:outline-none"></select>
       </span>
-      <span class="mt-2 text-base text-muted leading-relaxed">알림신청 → 결석신고서/체험학습 → 인쇄 → [인쇄 대상을 선택하세요.]에서 <b class="font-semibold text-ink">[신청서]만 체크</b> → PDF로 저장</span>
+      <span id="profileGuide" class="mt-2 text-base text-muted leading-relaxed"></span>
       <span class="mt-auto pt-4">
         <span class="flex flex-wrap items-center gap-x-3 border-t border-dashed border-rule pt-3">
           <span id="pdfName" class="text-base font-medium">파일을 선택하거나 이 영역에 드래그하세요</span>
@@ -368,14 +369,14 @@ async function pageTables(page) {
   return { tables, text: allText.join(' ') };
 }
 
-const KNOWN_LABELS = ['이름/학번', '신청기간', '승인기간', '누적결석일수', '출결종류', '사유', '증빙자료', '확인방법', '확인내용'];
 const hasLabel = (t, label) => t.rows.some(r => r.some(c => norm(c.text) === label));
-function cellRight(t, label) {
+// 표에서 label 칸 오른쪽의 첫 값. labels에 든 다른 항목명을 만나면 빈 값
+function cellRight(t, label, labels) {
   for (const r of t.rows) {
     const i = r.findIndex(c => norm(c.text) === label);
     if (i < 0) continue;
     for (const c of r.slice(i + 1)) {
-      if (KNOWN_LABELS.includes(norm(c.text))) return '';
+      if (labels.includes(norm(c.text))) return '';
       if (c.text) return c.text;
     }
     return '';
@@ -383,58 +384,84 @@ function cellRight(t, label) {
   return null;
 }
 
-// PDF 전체 → 신고서 레코드 목록
-async function parsePdf(buf, onProgress) {
+/* ───────────── 신고서 프로파일 ─────────────
+   서비스마다 신고서 PDF 양식이 다르므로 쪽 판독을 프로파일로 분리한다.
+   새 서비스를 지원하려면 PROFILES에 항목을 하나 추가하면 된다.
+     label    : 드롭다운·입력 칸에 표시할 서비스명
+     guide    : PDF 저장 방법 안내 (HTML)
+     parsePage(ctx) : 한 쪽을 판독해 레코드 또는 { error } 를 반환
+       ctx = { tables, text, page }  (tables는 pageTables가 추출한 표 격자)
+   레코드 형식: { name, sid, num, kind, reason, start, end, approved, reqDiffers,
+                 reqSig, apSig, slotFrom, slotTo, statedDays, confirm, memo }
+     kind: 결석·지각·조퇴·결과 / reason: 질병·인정·미인정·기타 / start·end: YYYY-MM-DD
+     slotFrom·slotTo: '조회'·'N교시'·'종례' (교시 단위가 아니면 '') / statedDays: 기재 일수 또는 null */
+const PROFILES = {
+  riroschool: {
+    label: '리로스쿨',
+    guide: '알림신청 → 결석신고서/체험학습 → 인쇄 → [인쇄 대상을 선택하세요.]에서 <b class="font-semibold text-ink">[신청서]만 체크</b> → PDF로 저장',
+    parsePage: parseRiroPage,
+  },
+};
+const DEFAULT_PROFILE = 'riroschool';
+
+const RIRO_LABELS = ['이름/학번', '신청기간', '승인기간', '누적결석일수', '출결종류', '사유', '증빙자료', '확인방법', '확인내용'];
+function parseRiroPage({ tables }) {
+  const get = (t, label) => cellRight(t, label, RIRO_LABELS);
+  const t1 = tables.find(t => hasLabel(t, '출결종류'));
+  const t2 = tables.find(t => hasLabel(t, '승인기간'));
+  if (!t1) return { error: '신청서 표 미검출' };
+
+  const who = (t2 && get(t2, '이름/학번')) || get(t1, '이름/학번') || '';
+  const m = /^(.*?)\s*\/\s*(\d{4,5})/.exec(who.replace(/\n/g, ' '));
+  const cat = splitPdfCat(get(t1, '출결종류'));
+  const periodTxt = ((t2 && get(t2, '승인기간')) || get(t1, '신청기간') || '').replace(/\n/g, ' ');
+  const reqTxt = ((t2 && get(t2, '신청기간')) || get(t1, '신청기간') || '').replace(/\n/g, ' ');
+  const dateRe = /\d{4}\s*[-.]\s*\d{1,2}\s*[-.]\s*\d{1,2}/g;
+  const dates = (periodTxt.match(dateRe) || []).map(parseDate);
+  const reqDates = (reqTxt.match(dateRe) || []).map(parseDate);
+  const slotRe = /\(\s*(조회|\d+교시)\s*부터\s*(종례|\d+교시)\s*까지\s*\)/;
+  const dayRe = /\(\s*(\d+)\s*일간\s*\)/;
+  const slot = slotRe.exec(periodTxt), reqSlot = slotRe.exec(reqTxt);
+  const dayN = dayRe.exec(periodTxt), reqDayN = dayRe.exec(reqTxt);
+  // 기간 비교용 요약: "날짜~날짜 (X부터 Y까지 | N일간)"
+  const periodSig = (ds, sl, dn) => [...new Set(ds)].map(d => d.slice(5)).join('~') +(sl ? ` (${sl[1]}~${sl[2]})` : dn ? ` (${dn[1]}일간)` : '');
+  const apSig = periodSig(dates, slot, dayN), rqSig = periodSig(reqDates, reqSlot, reqDayN);
+
+  if (!m) return { error: '이름/학번 판독 실패' };
+  if (!dates.length) return { error: '기간 판독 실패' };
+  if (!cat.kind) return { error: '출결 종류 판독 실패' };
+
+  return {
+    name: norm(m[1]),
+    sid: m[2],
+    num: +m[2].slice(-2),
+    kind: cat.kind,
+    reason: cat.reason,
+    start: dates[0],
+    end: dates[1] || dates[0],
+    approved: !!(t2 && get(t2, '승인기간')),
+    reqDiffers: reqDates.length > 0 && rqSig !== apSig,
+    reqSig: rqSig,
+    apSig,
+    // 신고서의 "0교시"는 NEIS의 "조회"에 해당
+    slotFrom: slot ? slot[1].replace(/^0교시$/, '조회') : '',
+    slotTo: slot ? slot[2].replace(/^0교시$/, '조회') : '',
+    statedDays: dayN ? +dayN[1] : null,
+    confirm: ((t2 && get(t2, '확인내용')) || '').replace(/\n/g, ' '),
+    memo: (get(t1, '사유') || '').replace(/\n/g, ' '),
+  };
+}
+
+// PDF 전체 → 신고서 레코드 목록 (쪽 판독은 프로파일에 맡김)
+async function parsePdf(buf, profile, onProgress) {
   const doc = await pdfjsLib.getDocument({ data: buf, ...PDFJS_OPTS }).promise;
   const records = [], errors = [];
   for (let p = 1; p <= doc.numPages; p++) {
     onProgress && onProgress(p, doc.numPages);
-    const page = await doc.getPage(p);
-    const { tables } = await pageTables(page);
-    const t1 = tables.find(t => hasLabel(t, '출결종류'));
-    const t2 = tables.find(t => hasLabel(t, '승인기간'));
-    if (!t1) { errors.push({ page: p, why: '신청서 표 미검출' }); continue; }
-
-    const who = (t2 && cellRight(t2, '이름/학번')) || cellRight(t1, '이름/학번') || '';
-    const m = /^(.*?)\s*\/\s*(\d{4,5})/.exec(who.replace(/\n/g, ' '));
-    const cat = splitPdfCat(cellRight(t1, '출결종류'));
-    const periodTxt = ((t2 && cellRight(t2, '승인기간')) || cellRight(t1, '신청기간') || '').replace(/\n/g, ' ');
-    const reqTxt = ((t2 && cellRight(t2, '신청기간')) || cellRight(t1, '신청기간') || '').replace(/\n/g, ' ');
-    const dateRe = /\d{4}\s*[-.]\s*\d{1,2}\s*[-.]\s*\d{1,2}/g;
-    const dates = (periodTxt.match(dateRe) || []).map(parseDate);
-    const reqDates = (reqTxt.match(dateRe) || []).map(parseDate);
-    const slotRe = /\(\s*(조회|\d+교시)\s*부터\s*(종례|\d+교시)\s*까지\s*\)/;
-    const dayRe = /\(\s*(\d+)\s*일간\s*\)/;
-    const slot = slotRe.exec(periodTxt), reqSlot = slotRe.exec(reqTxt);
-    const dayN = dayRe.exec(periodTxt), reqDayN = dayRe.exec(reqTxt);
-    // 기간 비교용 요약: "날짜~날짜 (X부터 Y까지 | N일간)"
-    const periodSig = (ds, sl, dn) => [...new Set(ds)].map(d => d.slice(5)).join('~') +(sl ? ` (${sl[1]}~${sl[2]})` : dn ? ` (${dn[1]}일간)` : '');
-    const apSig = periodSig(dates, slot, dayN), rqSig = periodSig(reqDates, reqSlot, reqDayN);
-
-    if (!m) { errors.push({ page: p, why: '이름/학번 판독 실패' }); continue; }
-    if (!dates.length) { errors.push({ page: p, why: '기간 판독 실패' }); continue; }
-    if (!cat.kind) { errors.push({ page: p, why: '출결 종류 판독 실패' }); continue; }
-
-    records.push({
-      page: p,
-      name: norm(m[1]),
-      sid: m[2],
-      num: +m[2].slice(-2),
-      kind: cat.kind,
-      reason: cat.reason,
-      start: dates[0],
-      end: dates[1] || dates[0],
-      approved: !!(t2 && cellRight(t2, '승인기간')),
-      reqDiffers: reqDates.length > 0 && rqSig !== apSig,
-      reqSig: rqSig,
-      apSig,
-      // 신고서의 "0교시"는 NEIS의 "조회"에 해당
-      slotFrom: slot ? slot[1].replace(/^0교시$/, '조회') : '',
-      slotTo: slot ? slot[2].replace(/^0교시$/, '조회') : '',
-      statedDays: dayN ? +dayN[1] : null,
-      confirm: ((t2 && cellRight(t2, '확인내용')) || '').replace(/\n/g, ' '),
-      memo: (cellRight(t1, '사유') || '').replace(/\n/g, ' '),
-    });
+    const { tables, text } = await pageTables(await doc.getPage(p));
+    const r = profile.parsePage({ tables, text, page: p });
+    if (!r || r.error) errors.push({ page: p, why: (r && r.error) || '판독 실패' });
+    else records.push({ ...r, page: p });
   }
   return { doc, records, errors };
 }
@@ -612,6 +639,11 @@ $('xlsxInput').addEventListener('change', e => setFile('xlsx', e.target.files[0]
 for (const kind of ['pdf', 'xlsx']) {
   $(kind + 'Clear').addEventListener('click', e => { e.preventDefault(); setFile(kind, null); });
 }
+// 신고서 서비스 선택: PROFILES 목록으로 드롭다운을 채우고, 바꾸면 안내를 갈고 다시 대조
+for (const [id, p] of Object.entries(PROFILES)) $('profile').append(new Option(p.label, id, id === DEFAULT_PROFILE, id === DEFAULT_PROFILE));
+const showProfileGuide = () => { $('profileGuide').innerHTML = PROFILES[$('profile').value].guide; };
+showProfileGuide();
+$('profile').addEventListener('change', () => { showProfileGuide(); scheduleRun(); });
 function updateRun() { $('runBtn').disabled = state.running || !(state.pdfFile && state.xlsxFile); }
 
 // 끌어다 놓기: 어느 칸에 놓든 확장자로 PDF·엑셀을 가려 넣음 (두 파일을 한 번에 놓아도 됨)
@@ -677,7 +709,7 @@ async function run(pdfBuf, xlsxBuf) {
   $('status').textContent = '엑셀 분석 중…';
   setProgress(0);
   const neis = parseXlsx(xlsxBuf);
-  const { doc, records, errors } = await parsePdf(pdfBuf, (p, n) => {
+  const { doc, records, errors } = await parsePdf(pdfBuf, PROFILES[$('profile').value], (p, n) => {
     $('status').textContent = `PDF 분석 중… ${p} / ${n}쪽`;
     setProgress(p / n);
   });
