@@ -67,7 +67,7 @@ tailwind.config = {
     <!-- for: 안의 select·제거 버튼이 아니라 파일 입력을 라벨 대상으로 (xlsxDrop도 같음) -->
     <label id="pdfDrop" for="pdfInput" class="flex flex-col rounded-lg border-2 p-5 cursor-pointer transition-colors focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-ink border-dashed border-rule-strong bg-sheet hover:border-ink">
       <span class="flex items-baseline justify-between gap-3">
-        <span class="text-lg font-semibold">신고서 PDF</span>
+        <span class="text-lg font-semibold">출결신고서 PDF</span>
         <select id="profile" aria-label="신고서 서비스" class="rounded-md border border-rule bg-sheet px-2 py-0.5 text-base text-ink cursor-pointer hover:border-ink focus:border-ink focus:outline-none"></select>
       </span>
       <span id="profileGuide" class="mt-2 text-base text-muted leading-relaxed"></span>
@@ -401,7 +401,7 @@ function cellRight(t, label, labels) {
 const PROFILES = {
   riroschool: {
     label: '리로스쿨',
-    guide: '알림신청 → 결석신고서/체험학습 → 인쇄 → [인쇄 대상을 선택하세요.]에서 <b class="font-semibold text-ink">[신청서]만 체크</b> → PDF로 저장',
+    guide: '알림신청 → 결석신고서/체험학습 → 인쇄 → [인쇄 대상을 선택하세요.]에서 <b class="font-semibold text-ink">[신청서]만 체크</b> → 인쇄 레이아웃 <b class="font-semibold text-ink">[세로]</b> 선택 후 PDF로 저장',
     parsePage: parseRiroPage,
   },
 };
