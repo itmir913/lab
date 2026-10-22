@@ -167,7 +167,7 @@ tailwind.config = {
             <button id="closeDetail" type="button" aria-label="닫기" class="xl:hidden rounded-md px-2 text-xl leading-none text-muted hover:bg-wash">✕</button>
           </span>
         </div>
-        <div class="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">
+        <div class="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 space-y-4">
           <div id="detail" class="space-y-4">
             <p class="text-base text-muted">좌측 표에서 행을 클릭하면 신고서 내용과 원본 쪽이 이 영역에 표시됩니다.</p>
           </div>
@@ -978,6 +978,8 @@ function openDetail(open) {
   $('detailPane').classList.toggle('translate-x-full', !open);
   $('detailPane').classList.toggle('invisible', !open);
   $('backdrop').classList.toggle('hidden', !open);
+  // 모바일에서 패널이 덮는 동안 뒤 목록이 함께 스크롤되지 않게 잠근다. xl 이상은 나란히 놓여 잠그지 않는다.
+  document.documentElement.classList.toggle('max-xl:overflow-hidden', open);
 }
 $('closeDetail').onclick = $('backdrop').onclick = () => openDetail(false);
 
