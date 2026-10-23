@@ -156,7 +156,7 @@ tailwind.config = {
                 <th>성명</th>
                 <th>일자</th>
                 <th>신고서</th>
-                <th id="srcTh">쪽</th>
+                <th id="srcTh" class="min-w-24">쪽</th>
                 <th class="!px-1"></th>
                 <th>NEIS</th>
                 <th class="min-w-80">비고</th>
@@ -1182,7 +1182,7 @@ function renderTable() {
       el('td', 'px-3 py-1.5 whitespace-nowrap', r.name),
       el('td', 'px-3 py-1.5 whitespace-nowrap tabular-nums', r.date.slice(5)),
       el('td', 'px-3 py-1.5 whitespace-nowrap', r.pdf ? `${r.pdf}${r.pdfSlot ? ` (${r.pdfSlot})` : ''}` : '—'),
-      el('td', 'px-3 py-1.5 tabular-nums', r.pages.join(',')),
+      srcCell(r),
       el('td', 'px-1 py-1.5 text-rule-strong', '→'),
       el('td', 'px-3 py-1.5 whitespace-nowrap', r.neis ? `${r.neis}${r.neisSlot ? ` (${r.neisSlot})` : ''}` : '—'),
       el('td', 'px-3 py-1.5 min-w-80 text-muted', r.note));
@@ -1349,6 +1349,15 @@ function showDetail(r) {
     cv.classList.add('hidden');
     cv.getContext('2d').clearRect(0, 0, cv.width, cv.height);
   }
+}
+
+function srcCell(r) {
+  const td = el('td', 'px-3 py-1.5 min-w-24 tabular-nums');
+  r.pages.forEach((p, i) => {
+    if (i) td.append(document.createTextNode(', '));
+    td.append(el('span', 'whitespace-nowrap', p));
+  });
+  return td;
 }
 
 // 행을 연달아 클릭하면 마지막 클릭만 그리도록, 진행 중인 렌더를 취소하고 순번을 올림
