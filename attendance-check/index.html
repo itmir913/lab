@@ -50,8 +50,8 @@ tailwind.config = {
     /* 좁은 칸에서 결과 배지가 가로로 넘치지 않도록 */
     #splitRoot.rail td:nth-child(2) { white-space: normal; }
     #splitRoot.rail .flag-badge { display: none; }
-    /* 원본을 넓게 볼 때는 설명 블록도 자리를 양보한다 */
-    #splitRoot.rail #detailBox { max-height: 30%; }
+    /* 넓게 볼 때는 설명과 원본이 절반씩. 위쪽 비교표가 원본만큼 중요하다 */
+    #splitRoot.rail #detailBox { max-height: 50%; }
   }
   /* 전체화면은 브라우저에 맡긴다. 화면을 저 혼자 쓰므로 둘레 여백만 입혀 준다
      (안쪽 열 높이 calc(100vh-2rem)이 이 여백과 맞아떨어진다) */
@@ -64,6 +64,10 @@ tailwind.config = {
     #splitRoot.rail { grid-template-columns: none; }
     #splitRoot.rail table :is(th, td) { display: table-cell; }
   }
+
+  /* 보여 줄 원본이 없으면 설명이 패널 높이를 다 쓴다 (ID 둘이라 레일 규칙보다 특이도가 높다) */
+  #detailPane.no-page #detailBox { max-height: none; flex: 1 1 auto; min-height: 0; }
+  #detailPane.no-page #canvasBox { display: none; }
 
   /* 확인 완료 도장: 비어 있으면 점선 원, 누르면 인주색 '확인' 날인 */
   .stamp { width: 2.75rem; height: 2.75rem; border-radius: 9999px; border: 1.5px dashed #8FA39A; color: transparent;
@@ -212,12 +216,30 @@ tailwind.config = {
             </div>
           </div>
           <div id="canvasBox" class="flex-1 min-h-0 overflow-auto overscroll-contain px-4 pb-4">
+            <div class="sticky top-0 z-10 flex h-0 items-start justify-end pr-1">
+              <button id="zoomBtn" type="button" class="hidden mt-1 rounded-md border border-rule bg-sheet/90 px-2 py-0.5 text-base font-semibold text-muted shadow-sm hover:border-ink hover:text-ink">⤢ 확대</button>
+            </div>
             <canvas id="pdfCanvas" class="hidden w-full h-auto rounded-md border border-rule"></canvas>
           </div>
         </div>
       </aside>
+
+    <!-- 원본 확대: 배경을 어둡게 깔고 그 위에 큰 원본 한 장 -->
+    <div id="zoomModal" class="hidden fixed inset-0 z-[60] flex flex-col bg-gradient-to-b from-ink/80 via-ink/90 to-ink/95 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="신고서 원본 확대">
+      <div class="flex items-center justify-between gap-3 px-4 py-3 text-white shrink-0">
+        <span id="zoomLabel" class="text-lg font-semibold"></span>
+        <span class="flex items-center gap-2">
+          <span class="hidden sm:inline text-base text-white/70"><kbd class="border-white/40 bg-white/10 text-white">Esc</kbd> 닫기</span>
+          <button id="zoomClose" type="button" aria-label="닫기" class="rounded-md px-2 text-xl leading-none text-white hover:bg-white/15">✕</button>
+        </span>
+      </div>
+      <div id="zoomBox" class="flex-1 min-h-0 overflow-auto overscroll-contain px-4 pb-4">
+        <canvas id="zoomCanvas" class="mx-auto h-auto max-w-full rounded-md bg-white shadow-2xl"></canvas>
+      </div>
+    </div>
     </div>
   </section>
+
 </main>
 
 <script>
@@ -1168,7 +1190,9 @@ function showFailedPage(e) {
              el('div', 'text-base', `${e.why}. 이 쪽은 대조에서 제외되었으므로 원본을 직접 확인하세요.`));
   $('detail').replaceChildren(box);
   openDetail(true);
+  $('detailPane').classList.remove('no-page');
   $('pdfCanvas').classList.remove('hidden');
+  $('zoomBtn').classList.remove('hidden');
   renderPage(e.ref);
 }
 
@@ -1274,6 +1298,7 @@ function moveSelection(d) {
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     if (document.fullscreenElement) return; // 브라우저가 전체화면을 먼저 벗는다
+    if (!$('zoomModal').classList.contains('hidden')) { closeZoom(); return; }
     openDetail(false);
     return;
   }
@@ -1305,6 +1330,9 @@ function clearDetail() {
   $('detail').replaceChildren(el('p', 'text-base text-muted', '좌측 표에서 행을 클릭하면 신고서 내용과 원본 쪽이 이 영역에 표시됩니다.'));
   $('pageLabel').textContent = '행을 클릭하세요';
   state.curRef = null;
+  closeZoom();
+  $('detailPane').classList.add('no-page');
+  $('zoomBtn').classList.add('hidden');
   $('pdfCanvas').classList.add('hidden');
 }
 
@@ -1383,7 +1411,11 @@ function showDetail(r) {
 
   openDetail(true);
   const cv = $('pdfCanvas');
-  if (r.refs && r.refs.length) { cv.classList.remove('hidden'); renderPage(r.refs[0]); }
+  closeZoom(); // 다른 행을 고르면 확대는 닫는다
+  const hasPage = !!(r.refs && r.refs.length);
+  $('zoomBtn').classList.toggle('hidden', !hasPage);
+  $('detailPane').classList.toggle('no-page', !hasPage);
+  if (hasPage) { cv.classList.remove('hidden'); renderPage(r.refs[0]); }
   else {
     cancelRender();
     // 엑셀로 받은 신고서는 원본 쪽이 없으므로 어느 파일 몇 행에서 왔는지만 알린다
@@ -1437,6 +1469,43 @@ function redrawPage() {
   redrawTimer = setTimeout(() => { if (state.curRef) renderPage(state.curRef); }, 150);
 }
 window.addEventListener('resize', redrawPage);
+
+let zoomSeq = 0, zoomTask = null;
+function closeZoom() {
+  zoomSeq++;
+  if (zoomTask) { zoomTask.cancel(); zoomTask = null; }
+  $('zoomModal').classList.add('hidden');
+  document.documentElement.classList.remove('overflow-hidden');
+}
+async function openZoom() {
+  const ref = state.curRef, doc = ref && state.docs[ref.d];
+  if (!doc) return;
+  const modal = $('zoomModal');
+  modal.classList.remove('hidden');
+  document.documentElement.classList.add('overflow-hidden'); // 뒤 화면이 따라 구르지 않도록
+  $('zoomLabel').textContent = $('pageLabel').textContent;
+  const seq = ++zoomSeq;
+  let page;
+  try { page = await doc.getPage(ref.p); } catch (e) { return; }
+  if (seq !== zoomSeq) return;
+  // 원본은 화면 너비의 70%를 차지한다. 좌우 여백이 있어야 가려진 화면이 보여 모달로 읽힌다
+  const base = page.getViewport({ scale: 1 });
+  const box = $('zoomBox');
+  const target = Math.min(box.clientWidth - 32, Math.max(box.clientWidth * 0.7, 320));
+  let scale = (target / base.width) * Math.min(window.devicePixelRatio || 1, 2);
+  const px = base.width * base.height * scale * scale;
+  if (px > MAX_PIXELS) scale *= Math.sqrt(MAX_PIXELS / px);
+  const vp = page.getViewport({ scale });
+  const cv = $('zoomCanvas');
+  cv.width = vp.width; cv.height = vp.height;
+  cv.style.width = Math.round(vp.width / Math.min(window.devicePixelRatio || 1, 2)) + 'px';
+  const task = zoomTask = page.render({ canvasContext: cv.getContext('2d'), viewport: vp });
+  try { await task.promise; } catch (e) { /* 취소됨 */ }
+  if (zoomTask === task) zoomTask = null;
+}
+$('zoomBtn').addEventListener('click', openZoom);
+$('zoomClose').addEventListener('click', closeZoom);
+$('zoomModal').addEventListener('click', e => { if (e.target === $('zoomModal') || e.target === $('zoomBox')) closeZoom(); });
 
 // 행을 연달아 클릭하면 마지막 클릭만 그리도록, 진행 중인 렌더를 취소하고 순번을 올림
 let renderSeq = 0;
