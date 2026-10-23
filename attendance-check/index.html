@@ -57,10 +57,17 @@ tailwind.config = {
 <!-- 여백 단위 16px 하나로 통일: 화면 가장자리(상하좌우)·구역 사이·카드 사이 모두 4. xl 패널 높이 100vh-2rem도 이 상하 여백 기준 -->
 <main class="max-w-screen-2xl mx-auto p-4 space-y-4">
 
-  <header class="max-w-3xl space-y-2">
-    <h1 class="text-title font-bold">출결신고서 ↔ NEIS 대조</h1>
-    <p class="text-base text-muted leading-relaxed">전자출결 신고서(PDF)와 NEIS 월별 출결 현황(엑셀)을 대조합니다. 모든 처리는 이 브라우저 내에서만 수행되며, 파일은 외부로 전송·저장되지 않습니다.</p>
-  </header>
+  <!-- 제목과 모음집 배지. 좁은 화면에서는 배지가 제목 위 왼쪽에 되돌아가기 링크처럼 놓인다 -->
+  <div class="flex flex-col-reverse gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+    <header class="max-w-3xl min-w-0 flex-1 space-y-2">
+      <h1 class="text-title font-bold">출결신고서 ↔ NEIS 대조</h1>
+      <p class="text-base text-muted leading-relaxed">전자출결 신고서(PDF)와 NEIS 월별 출결 현황(엑셀)을 대조합니다. 모든 처리는 이 브라우저 내에서만 수행되며, 파일은 외부로 전송·저장되지 않습니다.</p>
+    </header>
+    <a href="https://luminousky.com/teacher-utility-kit/" class="group self-start shrink-0 inline-flex items-center gap-1.5 rounded-full border border-rule bg-sheet py-1.5 pl-2.5 pr-3 text-base font-semibold text-muted transition-colors hover:border-ink hover:text-ink">
+      <svg aria-hidden="true" viewBox="0 0 16 16" class="h-4 w-4 shrink-0 text-rule-strong transition-colors group-hover:text-ink" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 3.5 5 8l4.5 4.5"/></svg>
+      Teacher Utility Kit
+    </a>
+  </div>
 
   <!-- 입력: 대조할 두 서류를 좌우에 배치 -->
   <section id="inputSec" class="grid gap-3 md:grid-cols-[1fr_auto_1fr]">
