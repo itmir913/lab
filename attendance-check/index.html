@@ -35,6 +35,8 @@ tailwind.config = {
 </script>
 <style>
   body { word-break: keep-all; overflow-wrap: break-word; }
+  /* 스크롤바가 생기고 사라질 때 내용이 좌우로 밀리지 않도록 자리를 늘 비워 둔다 */
+  html, textarea, [class*="overflow-auto"], [class*="overflow-y-auto"] { scrollbar-gutter: stable; }
   :focus-visible { outline: 2px solid #1D2B3A; outline-offset: 2px; }
   kbd { font-family: inherit; border: 1px solid #CDD6D1; border-bottom-width: 2px; border-radius: 4px; padding: 0 .35em; background: #fff; }
 
@@ -81,8 +83,9 @@ tailwind.config = {
       <span class="mt-auto pt-4">
         <span class="flex flex-wrap items-center gap-x-3 border-t border-dashed border-rule pt-3">
           <span id="pdfName" class="text-base font-medium">파일을 선택하거나 이 영역에 드래그하세요</span>
-          <button id="pdfClear" type="button" class="hidden text-base underline underline-offset-2 hover:text-seal">제거</button>
+          <button id="pdfClear" type="button" class="hidden text-base underline underline-offset-2 hover:text-seal">모두 제거</button>
         </span>
+        <span id="pdfList" class="mt-2 flex flex-col gap-1"></span>
       </span>
       <input id="pdfInput" type="file" accept=".pdf" class="sr-only">
     </label>
@@ -96,8 +99,9 @@ tailwind.config = {
       <span class="mt-auto pt-4">
         <span class="flex flex-wrap items-center gap-x-3 border-t border-dashed border-rule pt-3">
           <span id="xlsxName" class="text-base font-medium">파일을 선택하거나 이 영역에 드래그하세요</span>
-          <button id="xlsxClear" type="button" class="hidden text-base underline underline-offset-2 hover:text-seal">제거</button>
+          <button id="xlsxClear" type="button" class="hidden text-base underline underline-offset-2 hover:text-seal">모두 제거</button>
         </span>
+        <span id="xlsxList" class="mt-2 flex flex-col gap-1"></span>
       </span>
       <input id="xlsxInput" type="file" accept=".xlsx,.xls" class="sr-only">
     </label>
@@ -107,7 +111,7 @@ tailwind.config = {
     <span class="text-muted">신고서 <b id="barPdf" class="ml-1 font-semibold text-ink"></b></span>
     <span class="text-muted">NEIS <b id="barXlsx" class="ml-1 font-semibold text-ink"></b></span>
     <span class="ml-auto flex flex-wrap items-center gap-x-3">
-      <span class="text-muted">화면에 파일을 드래그해도 교체됩니다</span>
+      <span class="text-muted">파일을 바꾼 뒤 [대조 시작]을 다시 누르세요</span>
       <button id="reselect" type="button" class="font-semibold underline underline-offset-2 hover:text-seal">파일 재선택</button>
     </span>
   </div>
@@ -475,18 +479,34 @@ function parseRiroPage({ tables }) {
   };
 }
 
-// PDF 전체 → 신고서 레코드 목록 (쪽 판독은 프로파일에 맡김)
-async function parsePdf(buf, profile, onProgress) {
-  const doc = await pdfjsLib.getDocument({ data: buf, ...PDFJS_OPTS }).promise;
-  const records = [], errors = [];
-  for (let p = 1; p <= doc.numPages; p++) {
-    onProgress && onProgress(p, doc.numPages);
-    const { tables, text } = await pageTables(await doc.getPage(p));
-    const r = profile.parsePage({ tables, text, page: p });
-    if (!r || r.error) errors.push({ page: p, why: (r && r.error) || '판독 실패' });
-    else records.push({ ...r, page: p });
+// PDF 여러 개 → 신고서 레코드 목록 (쪽 판독은 프로파일에 맡김).
+// 신고서를 한 번에 내려받지 못해 여러 파일로 나뉘는 경우가 있어 파일 목록을 받는다.
+// page는 화면에 보일 이름, ref는 원본을 다시 그릴 좌표 { d: 파일 번호, p: 쪽 번호 }
+const pageName = (names, d, p) => names.length > 1 ? `${names[d].replace(/\.pdf$/i, '')} ${p}쪽` : `${p}쪽`;
+async function parsePdf(bufs, names, profile, onProgress) {
+  const docs = [], records = [], errors = [];
+  for (let i = 0; i < bufs.length; i++) {
+    try {
+      docs.push(await pdfjsLib.getDocument({ data: bufs[i], ...PDFJS_OPTS }).promise);
+    } catch (err) {
+      docs.push(null); // 이 파일만 빼고 나머지는 그대로 판독한다
+      errors.push({ label: names[i] || `PDF ${i + 1}`, why: `파일을 열 수 없습니다 (${err.message})` });
+    }
   }
-  return { doc, records, errors };
+  const total = docs.reduce((n, d) => n + (d ? d.numPages : 0), 0);
+  let seen = 0;
+  for (let d = 0; d < docs.length; d++) {
+    if (!docs[d]) continue;
+    for (let p = 1; p <= docs[d].numPages; p++) {
+      onProgress && onProgress(++seen, total);
+      const { tables, text } = await pageTables(await docs[d].getPage(p));
+      const r = profile.parsePage({ tables, text, page: p });
+      const at = { page: pageName(names, d, p), ref: { d, p } };
+      if (!r || r.error) errors.push({ label: at.page, ref: at.ref, why: (r && r.error) || '판독 실패' });
+      else records.push({ ...r, ...at });
+    }
+  }
+  return { docs, records, errors };
 }
 
 /* ───────────── NEIS 엑셀 ───────────── */
@@ -563,17 +583,21 @@ function parseNeisPlusSheet(rows, fileLabel) {
   for (let i = hi + 1; i < rows.length; i++) {
     const r = rows[i], where = `${fileLabel} ${i + 1}행`;
     const name = norm(cell(r, /^성명$/));
-    if (!name) continue; // 빈 행·합계 행
-    const step = cell(r, /진행상태/); // 접수상태 + 결재상태
-    const num = parseInt(cell(r, /^번호$/), 10);
-    if (!num) { errors.push({ label: where, why: `번호 미기재 (${name})` }); continue; }
-    const cat = reqCat(cell(r, /^신고종류$/), cell(r, /신고구분|결석신고구분|출결구분/), absentForm ? '결석' : '');
+    const numTxt = cell(r, /^번호$/);
     const ap = readPeriod(cell(r, /접수기간|^결석기간$|^승인기간$/));
     const rq = readPeriod(cell(r, /신고기간|^신청기간$/));
     const period = ap.dates.length ? ap : rq;
-    if (!period.dates.length) { errors.push({ label: where, why: '기간 판독 실패' }); continue; }
+    // 기간도 이름도 번호도 없으면 빈 행·합계 행으로 보고 조용히 넘긴다
+    if (!period.dates.length && !name && !numTxt) continue;
+    if (!period.dates.length) { errors.push({ label: where, why: `기간 판독 실패${name ? ` (${name})` : ''}` }); continue; }
+    if (!name) { errors.push({ label: where, why: `성명 미기재 (${numTxt || '번호도 없음'})` }); continue; }
+    // 번호 열이 둘 이상이면 값이 갈리므로 어느 쪽인지 사람이 정해야 한다
+    if (/\s/.test(numTxt.trim())) { errors.push({ label: where, why: `번호 열이 둘 이상입니다 (${numTxt})` }); continue; }
+    const num = parseInt(numTxt, 10);
+    if (!num) { errors.push({ label: where, why: `번호 미기재 (${name})` }); continue; }
+    const step = cell(r, /진행상태/); // 접수상태 + 결재상태
+    const cat = reqCat(cell(r, /^신고종류$/), cell(r, /신고구분|결석신고구분|출결구분/), absentForm ? '결석' : '');
     if (!cat.kind) { errors.push({ label: where, why: `출결 종류 판독 실패 (${name})` }); continue; }
-    if (!cat.reason) { errors.push({ label: where, why: `신고구분 미기재 (${name}, ${step})` }); continue; }
     records.push({
       name, sid: '', num, kind: cat.kind, reason: cat.reason,
       start: period.dates[0], end: period.dates[period.dates.length - 1],
@@ -651,13 +675,15 @@ function compare(neis, pdfRecs, holidays) {
     }
   }
   // 신고서 자체 점검
-  const recNotes = new Map();
+  const recNotes = new Map();  // 일수 점검 (FLAGS.days가 세는 것)
+  const recChecks = new Map(); // 그 밖의 신고서 점검
   for (const rec of pdfRecs) {
     const notes = [];
     const school = eachDay(rec.start, rec.end).filter(d => d.dow % 6 && !holidays.has(d.iso)).length;
     if (rec.statedDays != null && rec.statedDays !== school) notes.push(`신고서 ${rec.statedDays}일간 ≠ 수업일 ${school}일`);
     if (!school) notes.push('기간 전체가 휴업일');
     recNotes.set(rec, notes);
+    recChecks.set(rec, rec.reason ? [] : ['신고서에 신고구분 미기재']);
   }
   // 날짜·교시처럼 숫자가 든 낱말은 빼고 비교 (담임 확인 내용에 날짜가 덧붙는 경우)
   const memoKey = s => (s || '').split(/\s+/).filter(w => !/\d/.test(w)).join('').replace(/[.,·()\[\]\-~:;'"]/g, '');
@@ -668,8 +694,9 @@ function compare(neis, pdfRecs, holidays) {
   for (const k of new Set([...neisMap.keys(), ...pdfMap.keys()])) {
     const n = neisMap.get(k), ps = pdfMap.get(k) || [];
     const [num, date] = k.split('|');
-    const notes = [...new Set(ps.flatMap(p => recNotes.get(p)))];
-    const daysIssue = notes.length > 0;
+    const dayNotes = [...new Set(ps.flatMap(p => recNotes.get(p)))];
+    const notes = [...dayNotes, ...new Set(ps.flatMap(p => recChecks.get(p)))];
+    const daysIssue = dayNotes.length > 0;
     let status, nameDiff = false;
     if (n && ps.length) {
       const same = ps.filter(p => p.kind === n.kind && p.reason === n.reason);
@@ -706,6 +733,7 @@ function compare(neis, pdfRecs, holidays) {
       pdfConfirm: ps.map(p => p.confirm).join(' / '),
       pdfPeriod: ps.map(p => p.start === p.end ? p.start : `${p.start}~${p.end}`).join(', '),
       pages: ps.map(p => p.page),
+      refs: ps.map(p => p.ref).filter(Boolean),
       note: notes.join(', '),
     });
   }
@@ -715,7 +743,7 @@ function compare(neis, pdfRecs, holidays) {
 
 /* ───────────── 화면 ───────────── */
 const $ = id => document.getElementById(id);
-const state = { pdfFiles: [], xlsxFiles: [], running: false, rerun: false, doc: null, results: [], filter: null, renderTask: null,
+const state = { pdfFiles: [], xlsxFiles: [], running: false, docs: [], results: [], filter: null, renderTask: null,
                 selKey: null, visible: [], rowEls: new Map(), checked: new Set() };
 
 function el(tag, cls, text) {
@@ -740,25 +768,38 @@ function paintZone(kind, dragging = false) {
 }
 // 신고서 칸은 프로파일에 따라 PDF 1개 또는 엑셀 여러 개를 받는다. add면 이미 올린 파일에 더한다
 function setFiles(kind, files, add = false) {
-  const many = kind === 'pdf' && !reportIsPdf();
+  const many = kind === 'pdf'; // 신고서는 PDF든 엑셀이든 여러 개로 나뉘어 있을 수 있다
   const picked = [...files].filter(f => (kind === 'pdf' && reportIsPdf() ? /\.pdf$/i : /\.xlsx?$/i).test(f.name));
-  let list = add && many ? [...state[kind + 'Files'], ...picked] : picked;
-  if (!many) list = list.slice(0, 1);
+  // 맞지 않는 확장자만 놓인 경우 이미 올린 파일을 지우지 않는다
+  let list = !picked.length && add ? [...state[kind + 'Files']]
+           : add && many ? [...state[kind + 'Files'], ...picked] : picked;
+  if (!many && list.length > 1) {
+    $('status').textContent = `이 칸에는 한 개만 올릴 수 있어 첫 파일만 남겼습니다: ${list[0].name}`;
+    list = list.slice(0, 1);
+  }
   list = list.filter((f, i) => list.findIndex(g => g.name === f.name && g.size === f.size) === i);
   state[kind + 'Files'] = list;
   state[kind + 'Label'] = list.map(f => f.name).join(', ');
   const name = $(kind + 'Name');
-  name.textContent = !list.length ? EMPTY_NAME
-    : list.length === 1 ? `✓ ${list[0].name} (${fmtSize(list[0].size)})`
-    : `✓ ${list.length}개: ${list.map(f => f.name).join(', ')}`;
+  name.textContent = list.length ? `파일 ${list.length}개` : EMPTY_NAME;
   name.className = 'text-base ' + (list.length ? 'font-semibold text-ok-fg' : 'font-medium');
-  $(kind + 'Clear').classList.toggle('hidden', !list.length);
+  // 파일이 셋 넷으로 늘어도 읽히도록 한 줄에 하나씩, 각 줄에 제거 단추를 둔다
+  $(kind + 'List').replaceChildren(...list.map(f => {
+    const row = el('span', 'flex items-baseline gap-2 text-base text-ok-fg');
+    row.append(el('span', 'shrink-0', '✓'), el('span', 'min-w-0 break-all font-semibold', f.name),
+               el('span', 'shrink-0 text-muted', fmtSize(f.size)));
+    const x = el('button', 'shrink-0 text-muted underline underline-offset-2 hover:text-seal', '제거');
+    x.type = 'button';
+    x.onclick = e => { e.preventDefault(); setFiles(kind, state[kind + 'Files'].filter(g => g !== f)); };
+    row.append(x);
+    return row;
+  }));
+  $(kind + 'Clear').classList.toggle('hidden', list.length < 2);
   if (!list.length) $(kind + 'Input').value = ''; // 같은 파일을 다시 선택해도 change가 발생하도록
   paintZone(kind);
   updateButtons();
-  if (list.length) scheduleRun();
 }
-$('pdfInput').addEventListener('change', e => setFiles('pdf', e.target.files));
+$('pdfInput').addEventListener('change', e => setFiles('pdf', e.target.files, true));
 $('xlsxInput').addEventListener('change', e => setFiles('xlsx', e.target.files));
 for (const kind of ['pdf', 'xlsx']) {
   $(kind + 'Clear').addEventListener('click', e => { e.preventDefault(); setFiles(kind, []); });
@@ -770,14 +811,13 @@ function showProfile() {
   $('profileGuide').innerHTML = p.guide;
   $('pdfTitle').textContent = p.title;
   $('pdfInput').accept = p.input === 'pdf' ? '.pdf' : '.xlsx,.xls';
-  $('pdfInput').multiple = p.input !== 'pdf';
-  $('srcTh').textContent = p.input === 'pdf' ? '쪽' : '출처';
+  $('pdfInput').multiple = true; // 신고서는 PDF든 엑셀이든 여러 개로 나뉘어 있을 수 있다
+  if (!state.results.length) $('srcTh').textContent = p.input === 'pdf' ? '쪽' : '출처';
 }
 showProfile();
 $('profile').addEventListener('change', () => {
   showProfile();
-  setFiles('pdf', state.pdfFiles); // 받는 확장자가 바뀌면 맞지 않는 파일은 걸러진다
-  scheduleRun();
+  setFiles('pdf', [...state.pdfFiles]); // 받는 확장자가 바뀌면 맞지 않는 파일은 걸러진다
 });
 // 세 버튼 모두 상태에서 끌어온다: 대조 중에는 전부 잠그고, 내려받기는 결과가 있을 때만
 function updateButtons() {
@@ -801,9 +841,10 @@ for (const kind of ['pdf', 'xlsx']) {
     paintZone(kind);
     const files = [...e.dataTransfer.files];
     setFiles(kind, files, true);
-    const taken = kind === 'pdf' && reportIsPdf() ? /\.pdf$/i : /\.xlsx?$/i;
+    const wantsPdf = kind === 'pdf' && reportIsPdf();
+    const taken = wantsPdf ? /\.pdf$/i : /\.xlsx?$/i;
     const skipped = files.filter(f => !taken.test(f.name)).map(f => f.name);
-    if (skipped.length) $('status').textContent = `이 칸은 ${taken === /\.pdf$/i ? 'PDF' : '엑셀(.xlsx, .xls)'} 파일만 받습니다: ${skipped.join(', ')}`;
+    if (skipped.length) $('status').textContent = `이 칸은 ${wantsPdf ? 'PDF' : '엑셀(.xlsx, .xls)'} 파일만 받습니다: ${skipped.join(', ')}`;
   });
 }
 // 칸 밖에 놓아도 브라우저가 파일을 열어 버리지 않도록 페이지 전체에서 받음
@@ -823,33 +864,37 @@ window.addEventListener('drop', e => {
     const kind = fileKind(f);
     if (kind) byKind[kind].push(f); else skipped.push(f.name);
   }
+  // NEIS 월별 출결 현황은 한 개뿐이므로, 엑셀이 둘 이상 떨어지면 신고서 목록으로 본다
+  const asReport = !reportIsPdf() && byKind.xlsx.length > 1;
+  if (asReport) { setFiles('pdf', byKind.xlsx, true); byKind.xlsx = []; }
+  // 지금 프로파일이 받지 않는 종류는 어느 칸에도 들어가지 못하므로 그 사실을 알린다
+  if (!reportIsPdf() && byKind.pdf.length) {
+    skipped.push(...byKind.pdf.map(f => f.name));
+    byKind.pdf = [];
+  }
   for (const kind of ['pdf', 'xlsx']) if (byKind[kind].length) setFiles(kind, byKind[kind], true);
-  $('status').textContent = skipped.length
-    ? `PDF 또는 엑셀(.xlsx, .xls) 파일만 등록 가능합니다: ${skipped.join(', ')}`
+  const msg = skipped.length
+    ? `지금 선택한 신고서 서비스는 ${reportIsPdf() ? 'PDF' : '엑셀(.xlsx, .xls)'} 신고서를 받습니다. 등록하지 않은 파일: ${skipped.join(', ')}`
+    : asReport ? '엑셀 여러 개를 신고서 칸에 넣었습니다. NEIS 월별 출결 현황은 오른쪽 칸에 놓으세요.'
     : !reportIsPdf() && byKind.xlsx.length ? '엑셀을 NEIS 칸에 넣었습니다. 신고서 엑셀이라면 왼쪽 칸에 직접 놓으세요.'
     : '';
+  if (msg) $('status').textContent = msg; // setFiles가 남긴 안내를 덮어쓰지 않도록 빈 문구는 건너뛴다
 });
 
-// 두 파일이 모두 등록되면 자동으로 대조. 두 파일을 한 번에 놓아도 한 번만 실행되도록 다음 틱으로 미룸
-let runTimer = null;
-function scheduleRun() {
-  clearTimeout(runTimer);
-  runTimer = setTimeout(startRun, 0);
-}
 async function startRun() {
   if (!(state.pdfFiles.length && state.xlsxFiles.length)) return;
-  if (state.running) { state.rerun = true; return; }
+  if (state.running) return; // 대조 중에는 [대조 시작]이 잠겨 있다
   state.running = true;
   updateButtons();
   try {
-    await run(await Promise.all(state.pdfFiles.map(f => f.arrayBuffer())), await state.xlsxFiles[0].arrayBuffer());
+    const prof = profile(), names = state.pdfFiles.map(f => f.name), xlsxName = state.xlsxFiles[0].name;
+    await run(await Promise.all(state.pdfFiles.map(f => f.arrayBuffer())), await state.xlsxFiles[0].arrayBuffer(), prof, names, xlsxName);
   } catch (err) {
-    $('status').textContent = '오류: ' + err.message;
+    $('status').textContent = '대조 실패: ' + err.message;
   } finally {
     state.running = false;
     setProgress(null);
     updateButtons();
-    if (state.rerun) { state.rerun = false; startRun(); }
   }
 }
 $('runBtn').addEventListener('click', startRun);
@@ -863,33 +908,38 @@ function setProgress(frac) {
   $('progress').setAttribute('aria-valuenow', pct);
 }
 
-async function run(reportBufs, xlsxBuf) {
-  const prof = profile();
+async function run(reportBufs, xlsxBuf, prof = profile(), names = state.pdfFiles.map(f => f.name),
+                   xlsxName = state.xlsxFiles[0] && state.xlsxFiles[0].name) {
   $('status').textContent = '엑셀 분석 중…';
   setProgress(0);
   const neis = parseXlsx(xlsxBuf);
-  let doc = null, records, errors, done;
+  let docs = [], records, errors, done;
   if (prof.input === 'pdf') {
-    ({ doc, records, errors } = await parsePdf(reportBufs[0], prof, (p, n) => {
+    ({ docs, records, errors } = await parsePdf(reportBufs, names, prof, (p, n) => {
       $('status').textContent = `PDF 분석 중… ${p} / ${n}쪽`;
       setProgress(p / n);
     }));
-    done = `신고서 ${records.length}장 / ${doc.numPages}쪽`;
+    const pages = docs.reduce((n, d) => n + (d ? d.numPages : 0), 0);
+    done = `신고서 ${records.length}장 / ${pages}쪽` + (docs.length > 1 ? ` (PDF ${docs.length}개)` : '');
   } else {
     $('status').textContent = '신고서 엑셀 분석 중…';
-    ({ records, errors } = prof.parseFiles(reportBufs, state.pdfFiles.map(f => f.name)));
+    ({ records, errors } = prof.parseFiles(reportBufs, names));
     done = `신고서 ${records.length}건 / 엑셀 ${reportBufs.length}개`;
   }
   setProgress(null);
-  if (state.doc) state.doc.destroy();
-  Object.assign(state, { doc, neis, records, filter: 'todo', selKey: null, checked: new Set() });
+  $('srcTh').textContent = prof.input === 'pdf' ? '쪽' : '출처';
+  for (const d of state.docs) if (d) d.destroy();
+  // 요약줄도 이 판독에 쓰인 파일로 적는다 (예제 데모를 거친 뒤에도 섞이지 않도록)
+  const pdfLabel = names.length > 1 ? `${names[0]} 외 ${names.length - 1}개` : names[0] || '';
+  Object.assign(state, { docs, neis, records, pageNames: names, pdfLabel, xlsxLabel: xlsxName || '',
+                         demo: false, filter: 'todo', selKey: null, checked: new Set() });
   $('status').textContent = `대조 완료: NEIS ${neis.length}건, ${done}`;
   clearDetail();
   renderWarnings(errors);
   recompute();
   $('resultSec').classList.remove('hidden');
   showInputs(false);
-  return { neis: neis.length, pdf: records.length, pages: doc ? doc.numPages : 0, errors: errors.length, counts: countBy(state.results) };
+  return { neis: neis.length, pdf: records.length, pages: docs.reduce((n, d) => n + (d ? d.numPages : 0), 0), errors: errors.length, counts: countBy(state.results) };
 }
 
 // 판독 결과는 그대로 두고 대조만 다시 수행 (휴업일 변경 시)
@@ -997,15 +1047,15 @@ function renderWarnings(errors) {
   w.replaceChildren();
   if (!errors.length) { w.classList.add('hidden'); return; }
   w.classList.remove('hidden');
-  const pdfMode = !!state.doc;
+  // 원본을 띄울 수 있는 실패(쪽)와 그럴 수 없는 실패(엑셀 행, 열지 못한 파일)를 가려 안내한다
+  const clickable = errors.some(e => e.ref);
   w.append(el('div', 'font-semibold text-diff-fg', `신고서 판독 실패 ${errors.length}건`),
-           el('p', 'text-muted', pdfMode ? '아래 쪽은 대조에서 제외되었습니다. 쪽을 클릭하면 원본이 표시됩니다.'
-                                         : '아래 행은 대조에서 제외되었습니다.'));
+           el('p', 'text-muted', clickable ? '아래 항목은 대조에서 제외되었습니다. 쪽을 클릭하면 원본이 표시됩니다.'
+                                           : '아래 항목은 대조에서 제외되었습니다.'));
   const list = el('div', 'flex flex-wrap gap-2 mt-2');
   for (const e of errors) {
-    const where = e.label || `${e.page}쪽`;
-    const b = el(e.page ? 'button' : 'span', 'rounded-md border border-rule bg-wash px-2 py-0.5 text-base' + (e.page ? ' hover:border-ink' : ''), `${where}: ${e.why}`);
-    if (e.page) { b.type = 'button'; b.onclick = () => showFailedPage(e); }
+    const b = el(e.ref ? 'button' : 'span', 'rounded-md border border-rule bg-wash px-2 py-0.5 text-base' + (e.ref ? ' hover:border-ink' : ''), `${e.label}: ${e.why}`);
+    if (e.ref) { b.type = 'button'; b.onclick = () => showFailedPage(e); }
     list.append(b);
   }
   w.append(list);
@@ -1016,12 +1066,12 @@ function showFailedPage(e) {
   state.selKey = null;
   if (prev) state.rowEls.get(keyOf(prev)).className = rowClass(prev);
   const box = el('div', 'rounded-md border-l-4 border-diff-fg bg-diff-bg/60 p-3');
-  box.append(el('div', 'text-base font-semibold text-diff-fg', `${e.page}쪽 판독 실패`),
+  box.append(el('div', 'text-base font-semibold text-diff-fg', `${e.label} 판독 실패`),
              el('div', 'text-base', `${e.why}. 이 쪽은 대조에서 제외되었으므로 원본을 직접 확인하세요.`));
   $('detail').replaceChildren(box);
   openDetail(true);
   $('pdfCanvas').classList.remove('hidden');
-  renderPage(e.page);
+  renderPage(e.ref);
 }
 
 function setFilter(k) { state.filter = k; renderCards(); renderTable(); }
@@ -1224,7 +1274,7 @@ function showDetail(r) {
 
   openDetail(true);
   const cv = $('pdfCanvas');
-  if (r.pages.length && state.doc) { cv.classList.remove('hidden'); renderPage(r.pages[0]); }
+  if (r.refs && r.refs.length) { cv.classList.remove('hidden'); renderPage(r.refs[0]); }
   else {
     cancelRender();
     // 엑셀로 받은 신고서는 원본 쪽이 없으므로 어느 파일 몇 행에서 왔는지만 알린다
@@ -1241,12 +1291,13 @@ function cancelRender() {
   if (state.renderTask) { state.renderTask.cancel(); state.renderTask = null; }
 }
 
-async function renderPage(n) {
-  if (!state.doc) return;
+async function renderPage(ref) {
+  const doc = state.docs[ref.d];
+  if (!doc) return;
   cancelRender();
   const seq = renderSeq;
-  $('pageLabel').textContent = `${n}쪽`;
-  const page = await state.doc.getPage(n);
+  $('pageLabel').textContent = state.pageNames ? pageName(state.pageNames, ref.d, ref.p) : `${ref.p}쪽`;
+  const page = await doc.getPage(ref.p);
   if (seq !== renderSeq) return; // 기다리는 사이 다른 행이 클릭됨
   const vp = page.getViewport({ scale: 2 });
   const cv = $('pdfCanvas');
@@ -1264,7 +1315,7 @@ $('exportBtn').addEventListener('click', () => {
     '번호': r.num, '성명': r.name, '일자': r.date,
     '신고서 구분': r.pdf, '신고서 기간': r.pdfPeriod, '신고서 교시': r.pdfSlot,
     '신고서 사유(학생)': r.pdfMemo, '신고서 확인 내용(담임)': r.pdfConfirm,
-    [state.doc ? 'PDF 쪽' : '신고서 출처']: r.pages.join(','),
+    '신고서 출처': r.pages.join(', '),
     'NEIS 구분': r.neis, 'NEIS 교시': r.neisPeriods, 'NEIS 사유': r.neisMemo,
     '비고': r.note,
   }));

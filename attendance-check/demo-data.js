@@ -191,10 +191,12 @@
       }
     }
 
-    // 쪽 번호: 신고서 순서대로 1쪽부터, 뒤이어 판독 실패 쪽 2장
-    records.forEach((rec, i) => { rec.page = i + 1; });
-    errors.push({ page: records.length + 1, why: '기간 판독 실패' },
-                { page: records.length + 2, why: '이름/학번 판독 실패' });
+    // 쪽 번호: 신고서 순서대로 1쪽부터, 뒤이어 판독 실패 쪽 2장.
+    // page는 화면에 보일 이름, ref는 원본을 다시 그릴 좌표 (예제는 PDF 한 개이므로 d는 늘 0)
+    records.forEach((rec, i) => { rec.page = `${i + 1}쪽`; rec.ref = { d: 0, p: i + 1 }; });
+    for (const [n, why] of [[records.length + 1, '기간 판독 실패'], [records.length + 2, '이름/학번 판독 실패']]) {
+      errors.push({ label: `${n}쪽`, ref: { d: 0, p: n }, why });
+    }
     neis.sort((a, b) => a.date.localeCompare(b.date) || a.num - b.num);
     return { neis, records, errors, month: `${Y}년 ${M}월` };
   }
@@ -202,8 +204,8 @@
   /* ── 가짜 PDF 문서: pdf.js 문서와 같은 모양으로 모의 신고서를 캔버스에 그린다 ── */
   const A4 = { w: 595, h: 842 };
   function fakeDoc(records, errors) {
-    const byPage = new Map(records.map(r => [r.page, r]));
-    const failPages = new Set(errors.map(e => e.page));
+    const byPage = new Map(records.map(r => [r.ref.p, r]));
+    const failPages = new Set(errors.map(e => e.ref.p));
     return {
       numPages: records.length + errors.length,
       destroy() {},
@@ -310,11 +312,13 @@
   $('demoBtn').addEventListener('click', () => {
     if (state.running) return;
     const { neis, records, errors, month } = buildDemo();
-    if (state.doc) state.doc.destroy();
+    for (const d of state.docs) if (d) d.destroy();
     const doc = fakeDoc(records, errors);
-    Object.assign(state, { doc, neis, records, filter: 'todo', selKey: null, checked: new Set(), demo: true });
+    // pageNames를 비워야 앞선 판독의 파일명이 예제 쪽 이름에 묻어나지 않는다
+    Object.assign(state, { docs: [doc], neis, records, pageNames: [], filter: 'todo', selKey: null, checked: new Set(), demo: true });
     state.pdfLabel = `예제 신고서 ${records.length}장 (${month})`;
     state.xlsxLabel = `예제 NEIS ${neis.length}건 (${month})`;
+    $('srcTh').textContent = '쪽'; // 예제는 PDF 신고서다
     $('status').textContent = `예제 데모 — 실제 파일이 아닌 모의 데이터입니다. NEIS ${neis.length}건, 신고서 ${records.length}장 / ${doc.numPages}쪽`;
     clearDetail();
     renderWarnings(errors);
