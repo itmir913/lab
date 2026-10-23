@@ -315,7 +315,8 @@
     for (const d of state.docs) if (d) d.destroy();
     const doc = fakeDoc(records, errors);
     // pageNames를 비워야 앞선 판독의 파일명이 예제 쪽 이름에 묻어나지 않는다
-    Object.assign(state, { docs: [doc], neis, records, pageNames: [], filter: 'todo', selKey: null, checked: new Set(), demo: true });
+    Object.assign(state, { docs: [doc], neis, neisMonths: null, records, pageNames: [], filter: 'todo', selKey: null, checked: new Set(), demo: true });
+    $('search').value = '';
     state.pdfLabel = `예제 신고서 ${records.length}장 (${month})`;
     state.xlsxLabel = `예제 NEIS ${neis.length}건 (${month})`;
     $('srcTh').textContent = '쪽'; // 예제는 PDF 신고서다

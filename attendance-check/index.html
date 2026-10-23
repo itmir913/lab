@@ -224,10 +224,11 @@ function parseHolidays(text) {
   }
   return out;
 }
+const DAY_LIMIT = 400; // 날짜 오기로 몇 해치가 들어와도 멈추도록 둔 상한
 function eachDay(start, end) {
   const out = [];
   const d = new Date(start + 'T00:00:00Z'), e = new Date(end + 'T00:00:00Z');
-  for (let i = 0; d <= e && i < 400; i++, d.setUTCDate(d.getUTCDate() + 1)) {
+  for (let i = 0; d <= e && i < DAY_LIMIT; i++, d.setUTCDate(d.getUTCDate() + 1)) {
     out.push({ iso: d.toISOString().slice(0, 10), dow: d.getUTCDay() });
   }
   return out;
@@ -512,7 +513,8 @@ async function parsePdf(bufs, names, profile, onProgress) {
 /* ───────────── NEIS 엑셀 ───────────── */
 // 첫 시트를 행 배열로. 병합된 칸은 범위 전체를 왼쪽 위 셀 값으로 채움
 function sheetRows(buf) {
-  const wb = XLSX.read(buf, { type: 'array' });
+  // cellDates·dateNF가 없으면 날짜 칸이 'm/d/yy' 같은 서식 문자열로 나와 판독에 실패한다
+  const wb = XLSX.read(buf, { type: 'array', cellDates: true, dateNF: 'yyyy-mm-dd' });
   const ws = wb.Sheets[wb.SheetNames[0]];
   for (const mg of ws['!merges'] || []) {
     const src = ws[XLSX.utils.encode_cell(mg.s)];
@@ -524,20 +526,47 @@ function sheetRows(buf) {
   return XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
 }
 
+// 머리글의 조회기간("2025.06.01 ~ 2025.07.31")이 적힌 달 전부. 출결이 없는 달도 범위 안이다
+function coveredMonths(rows) {
+  const out = new Set();
+  for (const r of rows) {
+    const line = r.join(' ');
+    if (!/기간/.test(line)) continue;
+    const ds = (line.match(/\d{4}\s*[.\-\/]\s*\d{1,2}\s*[.\-\/]\s*\d{1,2}/g) || []).map(parseDate).filter(Boolean).sort();
+    if (ds.length < 2) continue;
+    for (let d = new Date(ds[0] + 'T00:00:00Z'), e = new Date(ds[ds.length - 1] + 'T00:00:00Z'), i = 0;
+         d <= e && i < 24; i++, d.setUTCMonth(d.getUTCMonth() + 1)) {
+      out.add(d.toISOString().slice(0, 7));
+    }
+    if (out.size) return out;
+  }
+  return out;
+}
+
 function parseXlsx(buf) {
   const rows = sheetRows(buf);
-  const out = [];
-  for (const r of rows) {
+  const records = [], errors = [];
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
     const date = parseDate(String(r[0]));
     const num = parseInt(String(r[1]).trim(), 10);
-    if (!date || !num) continue; // 머리글 등
+    if (!date || !num) {
+      // 번호와 출결 구분은 있는데 일자만 못 읽은 줄은 머리글이 아니라 판독 실패다
+      if (!date && num && String(r[0]).trim() && splitNeisCat(r[3]).kind) {
+        errors.push({ label: `NEIS 월별 출결 현황 ${i + 1}행`, why: `일자를 읽지 못했습니다 (${String(r[0]).trim()})` });
+      }
+      continue; // 제목·머리글·합계 줄
+    }
     const cat = splitNeisCat(r[3]);
-    out.push({
+    records.push({
       date, num, name: norm(r[2]), cat: norm(r[3]), kind: cat.kind, reason: cat.reason,
       periods: String(r[4]).replace(/,\s*$/, ''), memo: String(r[5]),
     });
   }
-  return out;
+  if (!records.length) {
+    errors.push({ label: 'NEIS 월별 출결 현황', why: '출결 기록을 한 건도 읽지 못했습니다. 양식·시트를 확인하세요' });
+  }
+  return { records, errors, months: coveredMonths(rows) };
 }
 
 /* ───────────── NEIS 플러스: 신고서 목록 엑셀 ─────────────
@@ -662,26 +691,39 @@ const CARD_GROUPS = [
 ];
 const catLabel = (reason, kind) => (reason === '인정' ? '출석인정' : reason) + kind;
 
-function compare(neis, pdfRecs, holidays) {
-  const months = new Set(neis.map(r => r.date.slice(0, 7)));
-  const neisMap = new Map(neis.map(r => [`${r.num}|${r.date}`, r]));
+function compare(neis, pdfRecs, holidays, covered) {
+  // 엑셀 머리글의 조회기간이 있으면 그것을, 없으면 적힌 출결의 달을 범위로 본다
+  const months = covered && covered.size ? covered : new Set(neis.map(r => r.date.slice(0, 7)));
+  // 하루에 지각 뒤 조퇴처럼 NEIS 기록이 둘 이상인 날이 있으므로 한 칸에 하나만 담지 않는다
+  const neisMap = new Map();
+  for (const r of neis) {
+    const k = `${r.num}|${r.date}`;
+    if (!neisMap.has(k)) neisMap.set(k, []);
+    neisMap.get(k).push(r);
+  }
   const pdfMap = new Map();
+  const put = (num, iso, rec) => {
+    const k = `${num}|${iso}`;
+    if (!pdfMap.has(k)) pdfMap.set(k, []);
+    pdfMap.get(k).push(rec);
+  };
   for (const rec of pdfRecs) {
-    for (const { iso, dow } of eachDay(rec.start, rec.end)) {
-      if (dow === 0 || dow === 6 || holidays.has(iso)) continue;
-      const k = `${rec.num}|${iso}`;
-      if (!pdfMap.has(k)) pdfMap.set(k, []);
-      pdfMap.get(k).push(rec);
-    }
+    const days = eachDay(rec.start, rec.end).filter(d => d.dow % 6 && !holidays.has(d.iso));
+    // 기간이 전부 휴업일이거나 날짜가 뒤집힌 신고서도 시작일 자리에 남겨 둔다
+    if (!days.length) put(rec.num, rec.start, rec);
+    for (const { iso } of days) put(rec.num, iso, rec);
   }
   // 신고서 자체 점검
   const recNotes = new Map();  // 일수 점검 (FLAGS.days가 세는 것)
   const recChecks = new Map(); // 그 밖의 신고서 점검
   for (const rec of pdfRecs) {
     const notes = [];
-    const school = eachDay(rec.start, rec.end).filter(d => d.dow % 6 && !holidays.has(d.iso)).length;
+    const days = eachDay(rec.start, rec.end);
+    const school = days.filter(d => d.dow % 6 && !holidays.has(d.iso)).length;
     if (rec.statedDays != null && rec.statedDays !== school) notes.push(`신고서 ${rec.statedDays}일간 ≠ 수업일 ${school}일`);
-    if (!school) notes.push('기간 전체가 휴업일');
+    if (!days.length) notes.push(`기간이 뒤집혀 있습니다 (${rec.start}~${rec.end})`);
+    else if (!school) notes.push('기간 전체가 휴업일·주말');
+    else if (days.length >= DAY_LIMIT) notes.push(`기간이 ${DAY_LIMIT}일을 넘어 앞부분만 셌습니다`);
     recNotes.set(rec, notes);
     recChecks.set(rec, rec.reason ? [] : ['신고서에 신고구분 미기재']);
   }
@@ -692,52 +734,71 @@ function compare(neis, pdfRecs, holidays) {
 
   const results = [];
   for (const k of new Set([...neisMap.keys(), ...pdfMap.keys()])) {
-    const n = neisMap.get(k), ps = pdfMap.get(k) || [];
+    const ns = neisMap.get(k) || [], all = pdfMap.get(k) || [];
     const [num, date] = k.split('|');
-    const dayNotes = [...new Set(ps.flatMap(p => recNotes.get(p)))];
-    const notes = [...dayNotes, ...new Set(ps.flatMap(p => recChecks.get(p)))];
-    const daysIssue = dayNotes.length > 0;
-    let status, nameDiff = false;
-    if (n && ps.length) {
-      const same = ps.filter(p => p.kind === n.kind && p.reason === n.reason);
-      const sl = slotsOf(n);
-      if (!same.length) status = 'diff';
-      else if (!same.some(p => !p.slotFrom || (p.slotFrom === sl[0] && p.slotTo === sl[sl.length - 1]))) status = 'slot';
-      else if (!same.some(p => memoSame(p.confirm, n.memo))) status = 'memo';
-      else status = 'ok';
-      if (ps.some(p => p.name !== n.name)) { notes.push('성명 상이'); nameDiff = true; }
-    } else if (n) {
-      if (n.reason === '미인정') { status = 'exempt'; notes.push('미인정'); }
-      else if (/체험/.test(n.memo)) { status = 'exempt'; notes.push('체험학습'); }
-      else status = 'noPdf';
-    } else {
-      status = 'noNeis';
-      if (!months.has(date.slice(0, 7))) notes.push('엑셀 범위 외 월');
-    }
-    if (ps.length > 1) notes.push(`신고서 ${ps.length}건 중복`);
-    const pending = ps.find(p => !p.approved);
-    if (pending) notes.push(pending.approvalNote || '승인 기간 미기재(신청 기간 적용)');
-    const reqs = ps.filter(p => p.reqDiffers);
-    for (const p of reqs) notes.push(`신청 ${p.reqSig} → 승인 ${p.apSig}`);
-    results.push({
-      status, num: +num, date, reqDiff: reqs.length > 0, daysIssue, nameDiff,
-      name: n ? n.name : ps[0].name,
-      pdfName: ps.map(p => p.name).join(', '),
-      neis: n ? n.cat : '',
-      neisSlot: n ? (s => s.length ? `${s[0]}~${s[s.length - 1]}` : '')(slotsOf(n)) : '',
-      neisPeriods: n ? n.periods : '',
-      neisMemo: n ? n.memo : '',
-      pdf: ps.map(p => catLabel(p.reason, p.kind)).join(', '),
-      pdfSlot: ps.map(p => p.slotFrom ? `${p.slotFrom}~${p.slotTo}` : p.slotText || '').filter(Boolean).join(', '),
-      pdfMemo: ps.map(p => p.memo).join(' / '),
-      pdfConfirm: ps.map(p => p.confirm).join(' / '),
-      pdfPeriod: ps.map(p => p.start === p.end ? p.start : `${p.start}~${p.end}`).join(', '),
-      pages: ps.map(p => p.page),
-      refs: ps.map(p => p.ref).filter(Boolean),
-      note: notes.join(', '),
+    // NEIS 기록마다 한 줄. 구분이 같은 신고서를 먼저 짝지어 주고, 짝을 못 찾은 신고서는 첫 줄에 함께 둔다
+    const pool = [...all];
+    const pairs = ns.map(n => {
+      const mine = [];
+      for (const p of [...pool]) {
+        if (p.kind !== n.kind || p.reason !== n.reason) continue;
+        mine.push(p);
+        pool.splice(pool.indexOf(p), 1);
+      }
+      return { n, ps: mine };
     });
+    if (!pairs.length) pairs.push({ n: null, ps: all });
+    else if (pool.length) pairs[0].ps = [...pairs[0].ps, ...pool];
+    for (const [seq, { n, ps }] of pairs.entries()) {
+      const dayNotes = [...new Set(ps.flatMap(p => recNotes.get(p)))];
+      const notes = [...dayNotes, ...new Set(ps.flatMap(p => recChecks.get(p)))];
+      const daysIssue = dayNotes.length > 0;
+      let status, nameDiff = false;
+      if (n && ps.length) {
+        const same = ps.filter(p => p.kind === n.kind && p.reason === n.reason);
+        const sl = slotsOf(n);
+        if (!same.length) status = 'diff';
+        else if (sl.length && !same.some(p => !p.slotFrom || (p.slotFrom === sl[0] && p.slotTo === sl[sl.length - 1]))) status = 'slot';
+        else if (!same.some(p => memoSame(p.confirm, n.memo))) {
+          status = 'memo';
+          // 양쪽이 다른 것과 양쪽이 비어 있는 것은 할 일이 다르므로 비고로 가른다
+          if (!norm(n.memo) && same.every(p => !norm(p.confirm))) notes.push('양쪽 사유 미기재');
+        }
+        else status = 'ok';
+        if (ps.some(p => p.name !== n.name)) { notes.push('성명 상이'); nameDiff = true; }
+      } else if (n) {
+        if (n.reason === '미인정') { status = 'exempt'; notes.push('미인정'); }
+        else if (/체험/.test(n.memo)) { status = 'exempt'; notes.push('체험학습'); }
+        else status = 'noPdf';
+      } else {
+        status = 'noNeis';
+        if (!months.has(date.slice(0, 7))) notes.push('엑셀 범위 외 월');
+      }
+      if (ps.length > 1) notes.push(`신고서 ${ps.length}건 중복`);
+      const pending = ps.find(p => !p.approved);
+      if (pending) notes.push(pending.approvalNote || '승인 기간 미기재(신청 기간 적용)');
+      const reqs = ps.filter(p => p.reqDiffers);
+      for (const p of reqs) notes.push(`신청 ${p.reqSig} → 승인 ${p.apSig}`);
+      results.push({
+        status, num: +num, date, seq, reqDiff: reqs.length > 0, daysIssue, nameDiff,
+        name: n ? n.name : (ps[0] || {}).name || '',
+        pdfName: ps.map(p => p.name).join(', '),
+        neis: n ? n.cat : '',
+        neisSlot: n ? (s => s.length ? `${s[0]}~${s[s.length - 1]}` : '')(slotsOf(n)) : '',
+        neisPeriods: n ? n.periods : '',
+        neisMemo: n ? n.memo : '',
+        pdf: ps.map(p => catLabel(p.reason, p.kind)).join(', '),
+        pdfSlot: ps.map(p => p.slotFrom ? `${p.slotFrom}~${p.slotTo}` : p.slotText || '').filter(Boolean).join(', '),
+        pdfMemo: ps.map(p => p.memo).join(' / '),
+        pdfConfirm: ps.map(p => p.confirm).join(' / '),
+        pdfPeriod: ps.map(p => p.start === p.end ? p.start : `${p.start}~${p.end}`).join(', '),
+        pages: ps.map(p => p.page),
+        refs: ps.map(p => p.ref).filter(Boolean),
+        note: notes.join(', '),
+      });
+    }
   }
-  results.sort((a, b) => a.num - b.num || a.date.localeCompare(b.date));
+  results.sort((a, b) => a.num - b.num || a.date.localeCompare(b.date) || a.seq - b.seq);
   return { results };
 }
 
@@ -912,7 +973,7 @@ async function run(reportBufs, xlsxBuf, prof = profile(), names = state.pdfFiles
                    xlsxName = state.xlsxFiles[0] && state.xlsxFiles[0].name) {
   $('status').textContent = '엑셀 분석 중…';
   setProgress(0);
-  const neis = parseXlsx(xlsxBuf);
+  const { records: neis, errors: neisErrors, months: neisMonths } = parseXlsx(xlsxBuf);
   let docs = [], records, errors, done;
   if (prof.input === 'pdf') {
     ({ docs, records, errors } = await parsePdf(reportBufs, names, prof, (p, n) => {
@@ -931,11 +992,12 @@ async function run(reportBufs, xlsxBuf, prof = profile(), names = state.pdfFiles
   for (const d of state.docs) if (d) d.destroy();
   // 요약줄도 이 판독에 쓰인 파일로 적는다 (예제 데모를 거친 뒤에도 섞이지 않도록)
   const pdfLabel = names.length > 1 ? `${names[0]} 외 ${names.length - 1}개` : names[0] || '';
-  Object.assign(state, { docs, neis, records, pageNames: names, pdfLabel, xlsxLabel: xlsxName || '',
+  Object.assign(state, { docs, neis, neisMonths, records, pageNames: names, pdfLabel, xlsxLabel: xlsxName || '',
                          demo: false, filter: 'todo', selKey: null, checked: new Set() });
   $('status').textContent = `대조 완료: NEIS ${neis.length}건, ${done}`;
   clearDetail();
-  renderWarnings(errors);
+  $('search').value = '';
+  renderWarnings([...errors, ...neisErrors]);
   recompute();
   $('resultSec').classList.remove('hidden');
   showInputs(false);
@@ -947,7 +1009,7 @@ async function run(reportBufs, xlsxBuf, prof = profile(), names = state.pdfFiles
 function recompute() {
   if (!state.neis) return;
   const idx = state.visible.findIndex(r => keyOf(r) === state.selKey);
-  state.results = compare(state.neis, state.records, parseHolidays($('holidays').value)).results;
+  state.results = compare(state.neis, state.records, parseHolidays($('holidays').value), state.neisMonths).results;
   renderCards();
   renderTable();
   updateButtons();
@@ -1124,7 +1186,7 @@ function renderTable() {
   }
 }
 
-const keyOf = r => `${r.num}|${r.date}`;
+const keyOf = r => `${r.num}|${r.date}|${r.seq || 0}`;
 // 선택된 행은 좌측 파란 띠 + 파란 배경
 function rowClass(r) {
   const sel = keyOf(r) === state.selKey;
