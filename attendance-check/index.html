@@ -40,6 +40,31 @@ tailwind.config = {
   :focus-visible { outline: 2px solid #1D2B3A; outline-offset: 2px; }
   kbd { font-family: inherit; border: 1px solid #CDD6D1; border-bottom-width: 2px; border-radius: 4px; padding: 0 .35em; background: #fff; }
 
+  /* [넓게 보기]: 표를 목록 레일로 줄이고 원본을 키운다. xl 이상에서만, 인쇄할 때는 되돌린다.
+     ID 선택자라 Tailwind의 xl:grid-cols-3·xl:col-span-2를 특이도로 이긴다 */
+  @media (min-width: 1280px) {
+    #splitRoot.rail { grid-template-columns: 24rem 1fr; }
+    #splitRoot.rail #tableCol { grid-column: auto; }
+    /* 신고서·출처·화살표·NEIS·비고 열은 접는다 (내용은 모두 오른쪽 패널에 있다) */
+    #splitRoot.rail table :is(th, td):nth-child(n+6) { display: none; }
+    /* 좁은 칸에서 결과 배지가 가로로 넘치지 않도록 */
+    #splitRoot.rail td:nth-child(2) { white-space: normal; }
+    #splitRoot.rail .flag-badge { display: none; }
+    /* 원본을 넓게 볼 때는 설명 블록도 자리를 양보한다 */
+    #splitRoot.rail #detailBox { max-height: 30%; }
+  }
+  /* 전체화면은 브라우저에 맡긴다. 화면을 저 혼자 쓰므로 둘레 여백만 입혀 준다
+     (안쪽 열 높이 calc(100vh-2rem)이 이 여백과 맞아떨어진다) */
+  #splitRoot:fullscreen {
+    padding: 1rem;
+    background: #FFFFFF;
+    overflow: auto;
+  }
+  @media print {
+    #splitRoot.rail { grid-template-columns: none; }
+    #splitRoot.rail table :is(th, td) { display: table-cell; }
+  }
+
   /* 확인 완료 도장: 비어 있으면 점선 원, 누르면 인주색 '확인' 날인 */
   .stamp { width: 2.75rem; height: 2.75rem; border-radius: 9999px; border: 1.5px dashed #8FA39A; color: transparent;
            font-weight: 700; line-height: 1; display: inline-grid; place-items: center; }
@@ -124,7 +149,7 @@ tailwind.config = {
 
   <div class="flex flex-wrap items-center gap-3">
     <button id="runBtn" disabled class="rounded-md bg-ink px-5 py-2.5 text-base font-semibold text-white hover:bg-ink-soft disabled:bg-rule disabled:text-muted">대조 시작</button>
-    <button id="exportBtn" disabled class="rounded-md border-2 border-ink px-5 py-2 text-base font-semibold hover:bg-ink hover:text-white disabled:border-rule disabled:text-muted disabled:hover:bg-transparent">결과 엑셀 다운로드</button>
+    <button id="exportBtn" disabled class="rounded-md border border-ink px-5 py-2 text-base font-semibold hover:bg-ink hover:text-white disabled:border-rule disabled:text-muted disabled:hover:bg-transparent">결과 다운로드</button>
     <button id="demoBtn" type="button" class="rounded-md border border-rule px-4 py-2 text-base font-semibold text-muted hover:border-ink hover:text-ink disabled:text-rule disabled:hover:border-rule disabled:hover:text-rule">예제 데모</button>
     <div id="progress" class="hidden h-1.5 w-48 rounded-full bg-rule overflow-hidden" role="progressbar" aria-label="PDF 분석 진행률" aria-valuemin="0" aria-valuemax="100">
       <div id="progressBar" class="h-full bg-ink transition-all" style="width: 0%"></div>
@@ -138,8 +163,8 @@ tailwind.config = {
     <div id="warnBox" class="hidden rounded-lg border border-rule border-l-4 border-l-diff-fg bg-sheet p-4 text-base"></div>
 
     <!-- xl 이상: 표와 원본 패널이 화면 높이를 채우고 각자 안에서 스크롤 -->
-    <div class="grid gap-4 xl:grid-cols-3">
-      <div class="xl:col-span-2 min-w-0 rounded-lg border border-rule bg-sheet flex flex-col xl:h-[calc(100vh-2rem)]">
+    <div id="splitRoot" class="grid gap-4 xl:grid-cols-3">
+      <div id="tableCol" class="xl:col-span-2 min-w-0 rounded-lg border border-rule bg-sheet flex flex-col xl:h-[calc(100vh-2rem)]">
         <div class="flex flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2.5 border-b border-rule shrink-0">
           <input id="search" type="search" placeholder="번호·성명·비고 검색" class="w-48 rounded-md border border-rule px-3 py-1.5 text-base focus:border-ink focus:outline-none">
           <span id="filterLabel" class="text-base font-semibold"></span>
@@ -174,15 +199,21 @@ tailwind.config = {
         <div class="flex items-center justify-between gap-3 px-4 py-3 border-b border-rule shrink-0">
           <h2 class="text-lg font-semibold">신고서 원본</h2>
           <span class="flex items-center gap-2">
+            <button id="wideBtn" type="button" aria-pressed="false" class="hidden xl:inline-flex items-center rounded-md border border-rule px-2 py-0.5 text-base text-muted hover:border-ink hover:text-ink">넓게 보기</button>
+            <button id="fullBtn" type="button" aria-pressed="false" class="hidden xl:inline-flex items-center rounded-md border border-rule px-2 py-0.5 text-base text-muted hover:border-ink hover:text-ink">전체화면</button>
             <span id="pageLabel" class="rounded-[3px] bg-wash px-2 text-base text-muted tabular-nums">행을 클릭하세요</span>
             <button id="closeDetail" type="button" aria-label="닫기" class="xl:hidden rounded-md px-2 text-xl leading-none text-muted hover:bg-wash">✕</button>
           </span>
         </div>
-        <div class="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 space-y-4">
-          <div id="detail" class="space-y-4">
-            <p class="text-base text-muted">좌측 표에서 행을 클릭하면 신고서 내용과 원본 쪽이 이 영역에 표시됩니다.</p>
+        <div class="flex-1 min-h-0 flex flex-col">
+          <div id="detailBox" class="shrink-0 max-h-[45%] overflow-y-auto overscroll-contain px-4 pt-4 pb-3">
+            <div id="detail" class="space-y-4">
+              <p class="text-base text-muted">좌측 표에서 행을 클릭하면 신고서 내용과 원본 쪽이 이 영역에 표시됩니다.</p>
+            </div>
           </div>
-          <canvas id="pdfCanvas" class="hidden w-full h-auto rounded-md border border-rule"></canvas>
+          <div id="canvasBox" class="flex-1 min-h-0 overflow-auto overscroll-contain px-4 pb-4">
+            <canvas id="pdfCanvas" class="hidden w-full h-auto rounded-md border border-rule"></canvas>
+          </div>
         </div>
       </aside>
     </div>
@@ -809,7 +840,7 @@ function compare(neis, pdfRecs, holidays, covered) {
 
 /* ───────────── 화면 ───────────── */
 const $ = id => document.getElementById(id);
-const state = { pdfFiles: [], xlsxFiles: [], running: false, docs: [], results: [], filter: null, renderTask: null,
+const state = { pdfFiles: [], xlsxFiles: [], running: false, docs: [], curRef: null, results: [], filter: null, renderTask: null,
                 selKey: null, visible: [], rowEls: new Map(), checked: new Set() };
 
 function el(tag, cls, text) {
@@ -1176,7 +1207,7 @@ function renderTable() {
     tdc.append(cb);
     const td0 = el('td', 'px-3 py-1.5 whitespace-nowrap');
     td0.append(el('span', 'inline-block rounded-[3px] px-1.5 font-medium ' + s.badge, s.label));
-    for (const f of Object.values(FLAGS)) if (f.test(r)) td0.append(el('span', 'inline-block rounded-[3px] px-1.5 ml-1 font-medium ' + f.badge, f.label));
+    for (const f of Object.values(FLAGS)) if (f.test(r)) td0.append(el('span', 'flag-badge inline-block rounded-[3px] px-1.5 ml-1 font-medium ' + f.badge, f.label));
     tr.append(tdc, td0,
       el('td', 'px-3 py-1.5 tabular-nums', String(r.num)),
       el('td', 'px-3 py-1.5 whitespace-nowrap', r.name),
@@ -1199,7 +1230,7 @@ function rowClass(r) {
     (sel ? 'bg-marker shadow-[inset_3px_0_0_#1D2B3A]' : 'hover:bg-wash ' + STATUS[r.status].row) +
     (state.checked.has(keyOf(r)) ? ' is-done' : '');
 }
-// 확인 완료 표기: 메모리에만 보관 (학생 정보이므로 브라우저 저장소에 남기지 않음)
+// 확인 완료로 표시: 메모리에만 보관 (학생 정보이므로 브라우저 저장소에 남기지 않음)
 function toggleChecked(r) {
   const k = keyOf(r);
   if (!state.checked.delete(k)) state.checked.add(k);
@@ -1217,14 +1248,20 @@ function paintChk(k, b = $('detailChk')) {
   if (!b) return;
   b.setAttribute('aria-pressed', on);
   b.querySelector('.stamp').classList.toggle('is-on', on);
-  b.lastChild.textContent = on ? '확인 완료' : '확인 완료 표기';
+  b.lastChild.textContent = on ? '확인 완료' : '확인 완료로 표시';
 }
 function select(r) {
   const prev = state.visible.find(v => keyOf(v) === state.selKey);
   state.selKey = keyOf(r);
   if (prev) state.rowEls.get(keyOf(prev)).className = rowClass(prev);
   const tr = state.rowEls.get(state.selKey);
-  if (tr) { tr.className = rowClass(r); tr.scrollIntoView({ block: 'nearest' }); }
+  if (tr) {
+    tr.className = rowClass(r);
+    // 머리글이 붙박이라 그 높이만큼 비켜 주지 않으면 윗방향으로 올라갈 때 행이 머리글 뒤에 깔린다
+    const head = tr.closest('table').tHead;
+    if (head) tr.style.scrollMarginTop = head.offsetHeight + 'px';
+    tr.scrollIntoView({ block: 'nearest' });
+  }
   showDetail(r);
 }
 // 표에 보이는 순서대로 이전·다음 행 선택
@@ -1235,7 +1272,11 @@ function moveSelection(d) {
   select(v[i < 0 ? (d > 0 ? 0 : v.length - 1) : Math.max(0, Math.min(v.length - 1, i + d))]);
 }
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { openDetail(false); return; }
+  if (e.key === 'Escape') {
+    if (document.fullscreenElement) return; // 브라우저가 전체화면을 먼저 벗는다
+    openDetail(false);
+    return;
+  }
   if (!state.results.length || e.altKey || e.ctrlKey || e.metaKey) return;
   if (e.target.closest('input, textarea, select')) return;
   if (e.key === 'ArrowDown' || e.key === 'j') moveSelection(1);
@@ -1263,6 +1304,7 @@ function clearDetail() {
   cancelRender();
   $('detail').replaceChildren(el('p', 'text-base text-muted', '좌측 표에서 행을 클릭하면 신고서 내용과 원본 쪽이 이 영역에 표시됩니다.'));
   $('pageLabel').textContent = '행을 클릭하세요';
+  state.curRef = null;
   $('pdfCanvas').classList.add('hidden');
 }
 
@@ -1360,6 +1402,42 @@ function srcCell(r) {
   return td;
 }
 
+// 전체화면: 결과 묶음만 화면을 쓰게 한다. 레일로 함께 바꿔 원본을 크게 보여 주고, 나올 때 되돌린다
+function toggleFull() {
+  const root = $('splitRoot');
+  if (document.fullscreenElement) { document.exitFullscreen(); return; }
+  if (!root.requestFullscreen) { $('status').textContent = '이 브라우저에서는 전체화면을 쓸 수 없습니다.'; return; }
+  root.requestFullscreen().catch(() => { $('status').textContent = '이 브라우저에서는 전체화면을 쓸 수 없습니다.'; });
+}
+$('fullBtn').addEventListener('click', toggleFull);
+document.addEventListener('fullscreenchange', () => {
+  const on = !!document.fullscreenElement;
+  $('fullBtn').setAttribute('aria-pressed', String(on));
+  $('fullBtn').textContent = on ? '전체화면 끄기' : '전체화면 켜기';
+  redrawPage(); // 넓게 보기와는 서로 건드리지 않는다
+});
+
+// 표를 목록 레일로 줄여 원본을 넓게 본다 (xl 이상). 고른 폭은 이 브라우저에만 기억한다
+function setWide(on) {
+  $('splitRoot').classList.toggle('rail', on);
+  $('wideBtn').setAttribute('aria-pressed', String(on));
+  $('wideBtn').textContent = on ? '좁게 보기' : '넓게 보기';
+  try { localStorage.setItem('wide', on ? '1' : ''); } catch (e) { /* 사생활 보호 모드 등 */ }
+  // 비율만 바꾸면 원본이 화면 밖에 남을 수 있으므로 표·원본 묶음을 화면 위로 올린다
+  if (on) $('splitRoot').scrollIntoView({ block: 'start' }); // 부드럽게 굴리면 곧바로 뒤따르는 재렌더에 끊긴다
+  redrawPage();
+}
+$('wideBtn').addEventListener('click', () => setWide(!$('splitRoot').classList.contains('rail')));
+try { if (localStorage.getItem('wide')) setWide(true); } catch (e) { /* 읽을 수 없으면 기본값 */ }
+
+// 패널 폭이 바뀌면 원본을 그 폭에 맞춰 다시 그린다
+let redrawTimer = null;
+function redrawPage() {
+  clearTimeout(redrawTimer);
+  redrawTimer = setTimeout(() => { if (state.curRef) renderPage(state.curRef); }, 150);
+}
+window.addEventListener('resize', redrawPage);
+
 // 행을 연달아 클릭하면 마지막 클릭만 그리도록, 진행 중인 렌더를 취소하고 순번을 올림
 let renderSeq = 0;
 function cancelRender() {
@@ -1367,15 +1445,28 @@ function cancelRender() {
   if (state.renderTask) { state.renderTask.cancel(); state.renderTask = null; }
 }
 
+const MAX_PIXELS = 12e6; // 캔버스 한 장이 메모리를 과하게 물지 않도록 (A4 기준 약 48MB)
 async function renderPage(ref) {
   const doc = state.docs[ref.d];
   if (!doc) return;
   cancelRender();
+  state.curRef = ref;
   const seq = renderSeq;
   $('pageLabel').textContent = state.pageNames ? pageName(state.pageNames, ref.d, ref.p) : `${ref.p}쪽`;
-  const page = await doc.getPage(ref.p);
+  let page;
+  try {
+    page = await doc.getPage(ref.p);
+  } catch (e) {
+    return; // 새 대조로 문서가 닫힌 뒤 늦게 도착한 요청
+  }
   if (seq !== renderSeq) return; // 기다리는 사이 다른 행이 클릭됨
-  const vp = page.getViewport({ scale: 2 });
+  // 패널에 보이는 폭의 두 배까지만 키우고, 고해상도 화면에서는 기기 화소까지 더 받는다
+  const base = page.getViewport({ scale: 1 });
+  const avail = Math.max(320, $('canvasBox').clientWidth - 32); // px-4 좌우 여백
+  let scale = Math.min(avail / base.width, 2) * Math.min(window.devicePixelRatio || 1, 2);
+  const px = base.width * base.height * scale * scale;
+  if (px > MAX_PIXELS) scale *= Math.sqrt(MAX_PIXELS / px);
+  const vp = page.getViewport({ scale });
   const cv = $('pdfCanvas');
   cv.width = vp.width; cv.height = vp.height;
   const task = state.renderTask = page.render({ canvasContext: cv.getContext('2d'), viewport: vp });
