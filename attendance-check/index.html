@@ -141,7 +141,7 @@ tailwind.config = {
     <div class="grid gap-4 xl:grid-cols-3">
       <div class="xl:col-span-2 min-w-0 rounded-lg border border-rule bg-sheet flex flex-col xl:h-[calc(100vh-2rem)]">
         <div class="flex flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2.5 border-b border-rule shrink-0">
-          <input id="search" type="search" placeholder="번호·성명 검색" class="w-48 rounded-md border border-rule px-3 py-1.5 text-base focus:border-ink focus:outline-none">
+          <input id="search" type="search" placeholder="번호·성명·비고 검색" class="w-48 rounded-md border border-rule px-3 py-1.5 text-base focus:border-ink focus:outline-none">
           <span id="filterLabel" class="text-base font-semibold"></span>
           <button id="clearFilter" class="hidden text-base underline underline-offset-2 hover:text-seal">전체 보기</button>
           <span id="keyHint" class="hidden md:inline ml-auto text-base text-muted"><kbd>↑</kbd> <kbd>↓</kbd> 행 이동 <span class="ml-3"><kbd>Space</kbd> 확인 완료</span></span>
@@ -667,7 +667,7 @@ const STATUS = {
   slot:   { label: '교시 불일치',    badge: 'bg-diff-bg text-diff-fg',     row: '',
             desc: '출결 구분은 동일하나 승인 교시 범위가 상이함 (예: PDF 조회~종례 ↔ NEIS 1교시~종례)' },
   memo:   { label: '사유 불일치',    badge: 'bg-diff-bg text-diff-fg',     row: '',
-            desc: '구분·교시는 동일하나 사유가 상이함 (예: PDF 담임교사 확인 내용 ↔ NEIS 사유)' },
+            desc: '양쪽 모두 사유가 적혀 있으나 그 내용이 상이함 (예: PDF 담임교사 확인 내용 ↔ NEIS 사유)' },
   noPdf:  { label: '신고서 누락',    badge: 'bg-miss-bg text-miss-fg',     row: '',
             desc: 'NEIS에 출결 기록이 있으나 PDF 신고서가 누락됨 (미인정·체험학습은 대조 제외로 분류)' },
   noNeis: { label: 'NEIS 미입력',    badge: 'bg-miss-bg text-miss-fg',     row: '',
@@ -680,13 +680,15 @@ const FLAGS = {
           desc: '번호·일자는 동일하나 성명이 상이함 (예: PDF 김○○ ↔ NEIS 이○○)' },
   req:  { label: '신청≠승인 기간', badge: 'bg-flag-bg text-flag-fg', test: r => r.reqDiff,
           desc: 'PDF 내 학생 신청 기간과 교사 승인 기간이 상이함 (예: 학생 신청 0교시~종례 → 교사 승인 1교시~종례)' },
+  memoNone: { label: '사유 없음', badge: 'bg-exempt-bg text-exempt-fg', test: r => r.memoNone,
+          desc: '구분·교시는 일치하나 신고서·NEIS 중 한쪽 이상에 사유가 적혀 있지 않음 (비고에 어느 쪽인지 표시)' },
   days: { label: '일수 오류', badge: 'bg-flag-bg text-flag-fg', test: r => r.daysIssue,
           desc: 'PDF 기재 일수가 실제 수업일수와 상이함 (예: 3일간 ↔ 수업일 2일), 또는 기간 전체가 휴업일' },
 };
 // 카드 묶음: 대조 결과 / 신고서 내부 점검 / 대조 제외
 const CARD_GROUPS = [
-  { title: '신고서 ↔ NEIS 대조', hint: 'PDF와 NEIS 두 장부를 대조해 본 결과', keys: ['todo', 'all', 'ok', 'diff', 'slot', 'memo', 'noPdf', 'noNeis', 'name'] },
-  { title: '신고서 내부 점검', hint: 'PDF 신고서 자체의 오류 (대조 결과와 병기)', keys: ['req', 'days'] },
+  { title: '신고서 ↔ NEIS 대조', hint: 'PDF와 NEIS 두 장부를 대조해 본 결과', keys: ['todo', 'all', 'ok', 'diff', 'slot', 'memo', 'memoNone', 'noPdf', 'noNeis', 'name'] },
+  { title: '신고서 내부 점검', hint: '신고서 자체의 오류 (대조 결과와 병기)', keys: ['req', 'days'] },
   { title: '대조 제외', hint: '신고서 제출 대상이 아니므로 대조에서 제외한 항목', keys: ['exempt'] },
 ];
 const catLabel = (reason, kind) => (reason === '인정' ? '출석인정' : reason) + kind;
@@ -753,17 +755,20 @@ function compare(neis, pdfRecs, holidays, covered) {
       const dayNotes = [...new Set(ps.flatMap(p => recNotes.get(p)))];
       const notes = [...dayNotes, ...new Set(ps.flatMap(p => recChecks.get(p)))];
       const daysIssue = dayNotes.length > 0;
-      let status, nameDiff = false;
+      let status, nameDiff = false, memoNone = false;
       if (n && ps.length) {
         const same = ps.filter(p => p.kind === n.kind && p.reason === n.reason);
         const sl = slotsOf(n);
         if (!same.length) status = 'diff';
         else if (sl.length && !same.some(p => !p.slotFrom || (p.slotFrom === sl[0] && p.slotTo === sl[sl.length - 1]))) status = 'slot';
-        else if (!same.some(p => memoSame(p.confirm, n.memo))) {
-          status = 'memo';
-          // 양쪽이 다른 것과 양쪽이 비어 있는 것은 할 일이 다르므로 비고로 가른다
-          if (!norm(n.memo) && same.every(p => !norm(p.confirm))) notes.push('양쪽 사유 미기재');
+        // 한쪽이라도 사유가 비면 견줄 것이 없다. '다르다'가 아니라 '없다'이므로 따로 알린다
+        else if (same.length && (!norm(n.memo) || same.every(p => !norm(p.confirm)))) {
+          status = 'ok';
+          memoNone = true;
+          const neisBlank = !norm(n.memo), pdfBlank = same.every(p => !norm(p.confirm));
+          notes.push(neisBlank && pdfBlank ? '양쪽 사유 없음' : neisBlank ? 'NEIS 사유 없음' : '신고서 사유 없음');
         }
+        else if (!same.some(p => memoSame(p.confirm, n.memo))) status = 'memo';
         else status = 'ok';
         if (ps.some(p => p.name !== n.name)) { notes.push('성명 상이'); nameDiff = true; }
       } else if (n) {
@@ -780,7 +785,7 @@ function compare(neis, pdfRecs, holidays, covered) {
       const reqs = ps.filter(p => p.reqDiffers);
       for (const p of reqs) notes.push(`신청 ${p.reqSig} → 승인 ${p.apSig}`);
       results.push({
-        status, num: +num, date, seq, reqDiff: reqs.length > 0, daysIssue, nameDiff,
+        status, num: +num, date, seq, reqDiff: reqs.length > 0, daysIssue, nameDiff, memoNone,
         name: n ? n.name : (ps[0] || {}).name || '',
         pdfName: ps.map(p => p.name).join(', '),
         neis: n ? n.cat : '',
@@ -1144,7 +1149,7 @@ function renderTable() {
   const q = $('search').value.trim();
   const rows = state.results.filter(r =>
     (!state.filter || matchFilter(r, state.filter)) &&
-    (!q || String(r.num) === q || r.name.includes(q)));
+    (!q || String(r.num) === q || r.name.includes(q) || r.note.includes(q)));
   $('filterLabel').textContent = (state.filter ? defOf(state.filter).label + ' ' : '') + `${rows.length}건`;
   $('clearFilter').classList.toggle('hidden', !state.filter);
   state.visible = rows;
