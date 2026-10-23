@@ -142,7 +142,7 @@ tailwind.config = {
   </div>
 
   <details class="rounded-lg border border-rule bg-sheet px-4 py-3">
-    <summary class="cursor-pointer text-base font-semibold">휴업일 설정 <span class="font-normal text-muted">(신고 기간의 수업일 산정 시 제외)</span></summary>
+    <summary class="cursor-pointer text-base font-semibold">공휴일 설정 <span class="font-normal text-muted">(신고 기간의 수업일 산정 시 제외)</span></summary>
     <p class="mt-2 text-base text-muted">공휴일·재량휴업일을 YYYY-MM-DD, YYYYMMDD, YYMMDD 형식으로 1행에 1개씩 입력하세요. 쉼표(,)로 구분해도 됩니다. 토·일요일은 자동 제외됩니다.</p>
     <textarea id="holidays" rows="3" placeholder="2026-09-24&#10;20260925&#10;261009" class="mt-2 w-full rounded-md border border-rule bg-wash/60 p-2 text-base tabular-nums focus:border-ink focus:outline-none"></textarea>
   </details>
@@ -238,7 +238,7 @@ function parseDate(s) {
   const m = /(\d{4})\s*[.\-\/]\s*(\d{1,2})\s*[.\-\/]\s*(\d{1,2})/.exec(s || '');
   return m ? toISO(+m[1], +m[2], +m[3]) : null;
 }
-// 휴업일 입력: 줄바꿈 → 쉼표로 바꾼 뒤 쉼표로 나누고 앞뒤 공백 제거
+// 공휴일 입력: 줄바꿈 → 쉼표로 바꾼 뒤 쉼표로 나누고 앞뒤 공백 제거
 // YYYY-MM-DD / YYYY.MM.DD / YYYYMMDD / YYMMDD 허용
 function parseHolidays(text) {
   const out = new Set();
@@ -714,7 +714,7 @@ const FLAGS = {
   memoNone: { label: '사유 없음', badge: 'bg-exempt-bg text-exempt-fg', test: r => r.memoNone,
           desc: '구분·교시는 일치하나 신고서·NEIS 중 한쪽 이상에 사유가 적혀 있지 않음 (비고에 어느 쪽인지 표시)' },
   days: { label: '일수 오류', badge: 'bg-flag-bg text-flag-fg', test: r => r.daysIssue,
-          desc: 'PDF 기재 일수가 실제 수업일수와 상이함 (예: 3일간 ↔ 수업일 2일), 또는 기간 전체가 휴업일' },
+          desc: 'PDF 기재 일수가 실제 수업일수와 상이함 (예: 3일간 ↔ 수업일 2일), 또는 기간 전체가 공휴일' },
 };
 // 카드 묶음: 대조 결과 / 신고서 내부 점검 / 대조 제외
 const CARD_GROUPS = [
@@ -742,7 +742,7 @@ function compare(neis, pdfRecs, holidays, covered) {
   };
   for (const rec of pdfRecs) {
     const days = eachDay(rec.start, rec.end).filter(d => d.dow % 6 && !holidays.has(d.iso));
-    // 기간이 전부 휴업일이거나 날짜가 뒤집힌 신고서도 시작일 자리에 남겨 둔다
+    // 기간이 전부 공휴일이거나 날짜가 뒤집힌 신고서도 시작일 자리에 남겨 둔다
     if (!days.length) put(rec.num, rec.start, rec);
     for (const { iso } of days) put(rec.num, iso, rec);
   }
@@ -755,7 +755,7 @@ function compare(neis, pdfRecs, holidays, covered) {
     const school = days.filter(d => d.dow % 6 && !holidays.has(d.iso)).length;
     if (rec.statedDays != null && rec.statedDays !== school) notes.push(`신고서 ${rec.statedDays}일간 ≠ 수업일 ${school}일`);
     if (!days.length) notes.push(`기간이 뒤집혀 있습니다 (${rec.start}~${rec.end})`);
-    else if (!school) notes.push('기간 전체가 휴업일·주말');
+    else if (!school) notes.push('기간 전체가 공휴일·주말');
     else if (days.length >= DAY_LIMIT) notes.push(`기간이 ${DAY_LIMIT}일을 넘어 앞부분만 셌습니다`);
     recNotes.set(rec, notes);
     recChecks.set(rec, rec.reason ? [] : ['신고서에 신고구분 미기재']);
@@ -1040,7 +1040,7 @@ async function run(reportBufs, xlsxBuf, prof = profile(), names = state.pdfFiles
   return { neis: neis.length, pdf: records.length, pages: docs.reduce((n, d) => n + (d ? d.numPages : 0), 0), errors: errors.length, counts: countBy(state.results) };
 }
 
-// 판독 결과는 그대로 두고 대조만 다시 수행 (휴업일 변경 시)
+// 판독 결과는 그대로 두고 대조만 다시 수행 (공휴일 변경 시)
 // 선택 행이 결과에서 빠지면 같은 위치의 다음 행을 선택
 function recompute() {
   if (!state.neis) return;
@@ -1359,13 +1359,13 @@ function showDetail(r) {
   row('사유 (신고서는 담임 확인 내용)', r.pdfConfirm, r.neisMemo, r.status === 'memo');
   d.append(cmp);
 
-  // NEIS 미입력은 공휴일·재량휴업일이 원인인 경우가 많으므로 바로 휴업일로 지정할 수 있게 함
+  // NEIS 미입력은 공휴일·재량휴업일이 원인인 경우가 많으므로 바로 공휴일로 지정할 수 있게 함
   if (r.status === 'noNeis') {
     const h = el('div', 'flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-rule bg-wash px-3 py-2');
-    const b = el('button', 'rounded-md bg-ink px-3 py-1 text-base font-semibold text-white hover:bg-ink-soft', `${r.date} 휴업일 지정`);
+    const b = el('button', 'rounded-md bg-ink px-3 py-1 text-base font-semibold text-white hover:bg-ink-soft', `${r.date} 공휴일로 지정하기`);
     b.type = 'button';
     b.onclick = () => addHoliday(r.date);
-    h.append(b, el('span', 'text-base text-muted', '공휴일·재량휴업일이면 지정하여 대조에서 제외합니다'));
+    h.append(b, el('span', 'text-base text-muted', '공휴일·재량휴업일이면 공휴일로 지정하여 출결 대조에서 제외합니다'));
     d.append(h);
   }
 
